@@ -4,6 +4,7 @@
 use std::process::ExitCode;
 
 mod bench_monorepo;
+mod fuzz_smoke;
 mod stress;
 
 fn main() -> ExitCode {
@@ -14,12 +15,13 @@ fn main() -> ExitCode {
         Some("bench") => run_bench(),
         Some("bench-monorepo") => bench_monorepo::run(&rest),
         Some("stress") => stress::run(&rest),
+        Some("fuzz-smoke") => fuzz_smoke::run(&rest),
         Some("compat") => {
             eprintln!("xtask compat runs the nightly lefthook-compat diff suite (TODO)");
             ExitCode::from(1)
         }
         _ => {
-            eprintln!("usage: xtask <bench|bench-monorepo|stress|compat>");
+            eprintln!("usage: xtask <bench|bench-monorepo|stress|fuzz-smoke|compat>");
             ExitCode::from(64)
         }
     }

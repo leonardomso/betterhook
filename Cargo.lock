@@ -2227,6 +2227,9 @@ dependencies = [
 [[package]]
 name = "xtask"
 version = "0.0.1"
+dependencies = [
+ "betterhook",
+]
 
 [[package]]
 name = "zerocopy"
