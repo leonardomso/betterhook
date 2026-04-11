@@ -18,6 +18,17 @@ path = "src/bin/betterhookd.rs"
 
 [dependencies]
 tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+serde_yaml_ng = { workspace = true }
+miette = { workspace = true }
+thiserror = { workspace = true }
+semver = { workspace = true }
+humantime = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
 
 [lints]
 workspace = true

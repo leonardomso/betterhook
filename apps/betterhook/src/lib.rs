@@ -4,4 +4,7 @@
 //! This crate is the implementation library. The `betterhook` CLI binary lives
 //! in the sibling `apps/cli` crate and depends on this one.
 
+pub mod config;
+pub mod error;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -1,0 +1,71 @@
+---
+source: apps/betterhook/src/config/parse.rs
+expression: config
+---
+Config {
+    meta: Meta {
+        version: 1,
+        min_betterhook: None,
+    },
+    hooks: {
+        "pre-commit": Hook {
+            name: "pre-commit",
+            parallel: true,
+            fail_fast: false,
+            parallel_limit: None,
+            stash_untracked: true,
+            jobs: [
+                Job {
+                    name: "lint",
+                    run: "eslint --cache --fix {staged_files}",
+                    fix: None,
+                    glob: [
+                        "*.ts",
+                        "*.tsx",
+                    ],
+                    exclude: [],
+                    tags: [],
+                    skip: None,
+                    only: None,
+                    env: {},
+                    root: None,
+                    stage_fixed: true,
+                    isolate: Some(
+                        Tool {
+                            name: "eslint",
+                        },
+                    ),
+                    timeout: Some(
+                        60s,
+                    ),
+                    interactive: false,
+                    fail_text: None,
+                    priority: 0,
+                },
+                Job {
+                    name: "test",
+                    run: "cargo test --quiet",
+                    fix: None,
+                    glob: [],
+                    exclude: [],
+                    tags: [],
+                    skip: None,
+                    only: None,
+                    env: {},
+                    root: None,
+                    stage_fixed: false,
+                    isolate: Some(
+                        ToolPath {
+                            tool: "cargo",
+                            target_dir: PerWorktree,
+                        },
+                    ),
+                    timeout: None,
+                    interactive: false,
+                    fail_text: None,
+                    priority: 1,
+                },
+            ],
+        },
+    },
+}
