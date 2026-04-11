@@ -24,6 +24,7 @@ use crate::git::{
 use super::RunResult;
 use super::output::{OutputEvent, SinkKind, sink};
 use super::proc::{Cancel, run_command};
+use crate::lock::{LockGuard, acquire_job_lock};
 
 /// Async mutex that serializes `git add` / `git stash` / other index
 /// operations across parallel jobs so concurrent writes to `.git/index`
@@ -67,6 +68,9 @@ pub struct RunOptions {
     pub only: Vec<String>,
     /// Which output sink to use (TTY vs NDJSON).
     pub sink: SinkKind,
+    /// Bypass the coordinator and file-lock entirely. Jobs declaring
+    /// `isolate` run unlocked with a warning to stderr.
+    pub no_locks: bool,
 }
 
 impl RunOptions {
@@ -78,6 +82,7 @@ impl RunOptions {
             skip: parse_env_list("BETTERHOOK_SKIP"),
             only: parse_env_list("BETTERHOOK_ONLY"),
             sink: SinkKind::Tty,
+            no_locks: std::env::var("BETTERHOOK_NO_LOCKS").is_ok(),
         }
     }
 
@@ -116,6 +121,11 @@ pub async fn run_hook_with_options(
     let (tx, writer) = sink(options.sink);
     let start = Instant::now();
 
+    // Resolve the common dir once up-front — the lock client stores
+    // advisory files under <common-dir>/betterhook/locks/.
+    let common_dir = crate::git::git_common_dir(worktree).await?;
+    let no_locks = options.no_locks;
+
     // Single per-hook lock covering every git index mutation (stash,
     // add, unstash). Parallel jobs share it.
     let git_lock: GitIndexLock = Arc::new(Mutex::new(()));
@@ -150,9 +160,27 @@ pub async fn run_hook_with_options(
     }
 
     let exec_res: RunResult<RunSummary> = if hook.parallel {
-        run_parallel(hook, resolved, &tx, &git_lock, worktree).await
+        run_parallel(
+            hook,
+            resolved,
+            &tx,
+            &git_lock,
+            worktree,
+            &common_dir,
+            no_locks,
+        )
+        .await
     } else {
-        run_sequential(hook, resolved, &tx, &git_lock, worktree).await
+        run_sequential(
+            hook,
+            resolved,
+            &tx,
+            &git_lock,
+            worktree,
+            &common_dir,
+            no_locks,
+        )
+        .await
     };
 
     // Always try to pop the stash, even on error. A stash-pop failure
@@ -198,12 +226,15 @@ struct RunSummary {
     jobs_skipped: usize,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_sequential(
     hook: &Hook,
     jobs: Vec<ResolvedJob>,
     tx: &mpsc::Sender<OutputEvent>,
     git_lock: &GitIndexLock,
     worktree: &Path,
+    common_dir: &Path,
+    no_locks: bool,
 ) -> RunResult<RunSummary> {
     let mut jobs_run = 0usize;
     let mut jobs_skipped = 0usize;
@@ -223,7 +254,10 @@ async fn run_sequential(
 
         let before_unstaged = snapshot_unstaged_if_needed(&rj.job, worktree).await?;
 
-        let extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook.name.clone())];
+        let (_guard, lock_env) =
+            acquire_if_isolated(&rj.job, common_dir, worktree, no_locks, tx).await;
+        let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook.name.clone())];
+        extra_env.extend(lock_env);
         for cmd in &plan.commands {
             let exit = run_command(
                 &rj.job.name,
@@ -259,12 +293,15 @@ async fn run_sequential(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_parallel(
     hook: &Hook,
     jobs: Vec<ResolvedJob>,
     tx: &mpsc::Sender<OutputEvent>,
     git_lock: &GitIndexLock,
     worktree: &Path,
+    common_dir: &Path,
+    no_locks: bool,
 ) -> RunResult<RunSummary> {
     let limit = hook
         .parallel_limit
@@ -302,11 +339,15 @@ async fn run_parallel(
         let hook_name = hook_name.clone();
         let git_lock = git_lock.clone();
         let worktree = worktree.to_path_buf();
+        let common_dir = common_dir.to_path_buf();
         let cancel = cancel.clone();
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore closed");
             let before_unstaged = snapshot_unstaged_if_needed(&job, &worktree).await?;
-            let extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name)];
+            let (_lock, lock_env) =
+                acquire_if_isolated(&job, &common_dir, &worktree, no_locks, &tx).await;
+            let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name)];
+            extra_env.extend(lock_env);
             let mut job_failed = false;
             for cmd in &plan.commands {
                 let exit = run_command(
@@ -361,6 +402,59 @@ async fn run_parallel(
 
 struct JobOutcome {
     failed: bool,
+}
+
+/// If `job` declares an `isolate` spec, acquire the appropriate lock
+/// (flock via the client) and return a guard holding it for the
+/// duration of the job. On `no_locks`, print a one-line warning and
+/// return without locking.
+async fn acquire_if_isolated(
+    job: &Job,
+    common_dir: &Path,
+    worktree: &Path,
+    no_locks: bool,
+    tx: &mpsc::Sender<OutputEvent>,
+) -> (Option<LockGuard>, Vec<(String, String)>) {
+    let Some(spec) = &job.isolate else {
+        return (None, Vec::new());
+    };
+    if no_locks {
+        let _ = tx
+            .send(OutputEvent::JobSkipped {
+                job: job.name.clone(),
+                reason: "BETTERHOOK_NO_LOCKS set — running unlocked".to_owned(),
+            })
+            .await;
+        return (None, Vec::new());
+    }
+    // Move the blocking flock call off the async runtime.
+    let common_dir_owned = common_dir.to_path_buf();
+    let worktree_owned = worktree.to_path_buf();
+    let spec_owned = spec.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        acquire_job_lock(&common_dir_owned, &spec_owned, &worktree_owned)
+    })
+    .await;
+    match result {
+        Ok(Ok(guard)) => {
+            let env = guard.extra_env.clone();
+            (Some(guard), env)
+        }
+        Ok(Err(e)) => {
+            eprintln!(
+                "betterhook: WARNING — failed to acquire lock for job '{}': {e}. running unlocked.",
+                job.name
+            );
+            (None, Vec::new())
+        }
+        Err(e) => {
+            eprintln!(
+                "betterhook: WARNING — lock task panicked for job '{}': {e}. running unlocked.",
+                job.name
+            );
+            (None, Vec::new())
+        }
+    }
 }
 
 /// When the job opts into `stage_fixed`, return the set of files that
@@ -639,6 +733,7 @@ mod tests {
             skip: vec!["should-skip".to_owned()],
             only: Vec::new(),
             sink: SinkKind::Tty,
+            no_locks: false,
         };
         let rep = run_hook_with_options(&hook, &root, opts).await.unwrap();
         assert!(rep.ok, "should-skip was filtered out, hook should pass");
@@ -661,6 +756,7 @@ mod tests {
             skip: Vec::new(),
             only: vec!["lint".to_owned()],
             sink: SinkKind::Tty,
+            no_locks: false,
         };
         let rep = run_hook_with_options(&hook, &root, opts).await.unwrap();
         assert!(rep.ok);

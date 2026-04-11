@@ -30,6 +30,9 @@ pub struct Args {
     /// Emit NDJSON events instead of the colored TTY output.
     #[arg(long)]
     pub json: bool,
+    /// Bypass the coordinator daemon and file locks entirely.
+    #[arg(long)]
+    pub no_locks: bool,
     /// Positional args passed through from git after the `--` separator.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub extra: Vec<String>,
@@ -53,6 +56,9 @@ pub async fn run(args: Args) -> miette::Result<()> {
             }
             if args.json {
                 options.sink = SinkKind::Json;
+            }
+            if args.no_locks {
+                options.no_locks = true;
             }
             let report = run_hook_with_options(hook, &args.worktree, options).await?;
             if !report.ok {

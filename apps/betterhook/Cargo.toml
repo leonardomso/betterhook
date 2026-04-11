@@ -37,6 +37,7 @@ clap = { workspace = true }
 futures = "0.3"
 bytes = "1"
 tracing-subscriber = { workspace = true }
+fs4 = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
