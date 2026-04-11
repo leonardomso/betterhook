@@ -55,6 +55,17 @@ pub struct InstalledHook {
 pub struct ConfigInfo {
     pub path: PathBuf,
     pub hooks: Vec<HookInfo>,
+    /// Monorepo packages declared in the config. Empty for single-
+    /// package repos.
+    #[serde(default)]
+    pub packages: Vec<PackageInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageInfo {
+    pub name: String,
+    pub path: PathBuf,
+    pub hooks: Vec<HookInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,19 +196,32 @@ fn read_config(worktree: &Path) -> ConfigResult<Option<ConfigInfo>> {
         return Ok(None);
     };
     let config = crate::config::load(&path)?;
-    let hooks = config
-        .hooks
+    let hooks: Vec<HookInfo> = config.hooks.values().map(hook_info).collect();
+    let packages: Vec<PackageInfo> = config
+        .packages
         .values()
-        .map(|h| HookInfo {
-            name: h.name.clone(),
-            parallel: h.parallel,
-            fail_fast: h.fail_fast,
-            stash_untracked: h.stash_untracked,
-            jobs: h.jobs.iter().map(|j| j.name.clone()).collect(),
-            dag: summarize_dag(h),
+        .map(|pkg| PackageInfo {
+            name: pkg.name.clone(),
+            path: pkg.path.clone(),
+            hooks: pkg.hooks.values().map(hook_info).collect(),
         })
         .collect();
-    Ok(Some(ConfigInfo { path, hooks }))
+    Ok(Some(ConfigInfo {
+        path,
+        hooks,
+        packages,
+    }))
+}
+
+fn hook_info(h: &crate::config::Hook) -> HookInfo {
+    HookInfo {
+        name: h.name.clone(),
+        parallel: h.parallel,
+        fail_fast: h.fail_fast,
+        stash_untracked: h.stash_untracked,
+        jobs: h.jobs.iter().map(|j| j.name.clone()).collect(),
+        dag: summarize_dag(h),
+    }
 }
 
 fn summarize_dag(hook: &crate::config::Hook) -> Option<DagSummary> {
