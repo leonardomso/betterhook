@@ -6,10 +6,6 @@
 //! exists. Everything an agent needs to decide whether a commit will
 //! trigger betterhook and what jobs it would run.
 
-// `StatusError::Config` embeds a miette-annotated ConfigError that
-// carries source spans; boxing every variant fights the ergonomics.
-#![allow(clippy::result_large_err)]
-
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -105,7 +101,7 @@ pub enum StatusError {
 
     #[error("config error")]
     #[diagnostic(transparent)]
-    Config(#[from] crate::error::ConfigError),
+    Config(#[from] Box<crate::error::ConfigError>),
 
     #[error("io error at {path}")]
     Io {

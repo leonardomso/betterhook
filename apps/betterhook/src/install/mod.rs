@@ -10,12 +10,6 @@
 //! See the `manifest` module for the schema of `installed.json`, which
 //! is how `uninstall` knows what's safe to remove.
 
-// The InstallError enum embeds a `ConfigError` that carries miette
-// source spans, which pushes `Result<T, InstallError>` over clippy's
-// 128-byte threshold. Boxing each variant fights the ergonomics with no
-// real-world benefit because install is a one-shot operation.
-#![allow(clippy::result_large_err)]
-
 pub mod manifest;
 pub mod wrapper;
 
@@ -37,7 +31,7 @@ pub enum InstallError {
     ConfigMissing {
         path: PathBuf,
         #[source]
-        source: crate::error::ConfigError,
+        source: Box<crate::error::ConfigError>,
     },
 
     #[error("git error")]
@@ -132,7 +126,7 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
     let config =
         crate::config::load(&config_path).map_err(|source| InstallError::ConfigMissing {
             path: config_path.clone(),
-            source,
+            source: Box::new(source),
         })?;
 
     let common_dir = crate::git::git_common_dir(&worktree).await?;
