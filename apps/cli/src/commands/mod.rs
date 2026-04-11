@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod dispatch;
 pub mod explain;
 pub mod fix;

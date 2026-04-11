@@ -21,5 +21,5 @@ pub use hash::{
 pub use lookup::{
     args_hash_from_job, derive_key, hash_file_set, lookup, store as store_result, tool_hash_proxy,
 };
-pub use store::{CachedResult, Store, StoreError, cache_dir};
+pub use store::{CachedResult, Stats, Store, StoreError, cache_dir};
 pub use tool_hash::{resolve_tool_hash, try_resolve_tool_hash};

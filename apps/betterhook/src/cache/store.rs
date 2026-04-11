@@ -26,6 +26,39 @@ use super::hash::CacheKey;
 /// Cache subdirectory under `<common-dir>/betterhook/`.
 pub const CACHE_SUBDIR: &str = "cache";
 
+/// Aggregate snapshot returned by [`Store::stats`].
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Stats {
+    pub entries: usize,
+    pub total_bytes: u64,
+    #[serde(with = "systemtime_opt_secs")]
+    pub oldest: Option<SystemTime>,
+    #[serde(with = "systemtime_opt_secs")]
+    pub newest: Option<SystemTime>,
+}
+
+#[allow(clippy::ref_option)]
+mod systemtime_opt_secs {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(t: &Option<SystemTime>, s: S) -> Result<S::Ok, S::Error> {
+        match t {
+            Some(t) => {
+                let secs = t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                Some(secs).serialize(s)
+            }
+            None => Option::<u64>::None.serialize(s),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<SystemTime>, D::Error> {
+        let opt = Option::<u64>::deserialize(d)?;
+        Ok(opt.map(|secs| UNIX_EPOCH + Duration::from_secs(secs)))
+    }
+}
+
 /// Return the absolute cache directory for a given common-dir.
 #[must_use]
 pub fn cache_dir(common_dir: &Path) -> PathBuf {
@@ -197,6 +230,136 @@ impl Store {
             }
         }
         Ok(count)
+    }
+
+    /// Absolute root directory for this store.
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Aggregate the store into a [`Stats`] snapshot by walking every
+    /// shard directory and tallying entry count, total bytes, and the
+    /// oldest/newest `modified` timestamp.
+    pub fn stats(&self) -> StoreResult<Stats> {
+        let mut stats = Stats::default();
+        if !self.root.is_dir() {
+            return Ok(stats);
+        }
+        for shard in std::fs::read_dir(&self.root).map_err(|source| StoreError::Io {
+            path: self.root.clone(),
+            source,
+        })? {
+            let shard = shard.map_err(|source| StoreError::Io {
+                path: self.root.clone(),
+                source,
+            })?;
+            if !shard.file_type().ok().is_some_and(|t| t.is_dir()) {
+                continue;
+            }
+            for entry in std::fs::read_dir(shard.path()).map_err(|source| StoreError::Io {
+                path: shard.path(),
+                source,
+            })? {
+                let entry = entry.map_err(|source| StoreError::Io {
+                    path: shard.path(),
+                    source,
+                })?;
+                let meta = entry.metadata().map_err(|source| StoreError::Io {
+                    path: entry.path(),
+                    source,
+                })?;
+                stats.entries += 1;
+                stats.total_bytes += meta.len();
+                let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                stats.oldest = Some(match stats.oldest {
+                    Some(t) if t < modified => t,
+                    _ => modified,
+                });
+                stats.newest = Some(match stats.newest {
+                    Some(t) if t > modified => t,
+                    _ => modified,
+                });
+            }
+        }
+        Ok(stats)
+    }
+
+    /// Remove every cache entry. Returns the number of files deleted.
+    pub fn clear(&self) -> StoreResult<usize> {
+        if !self.root.is_dir() {
+            return Ok(0);
+        }
+        let mut removed = 0usize;
+        for shard in std::fs::read_dir(&self.root).map_err(|source| StoreError::Io {
+            path: self.root.clone(),
+            source,
+        })? {
+            let shard = shard.map_err(|source| StoreError::Io {
+                path: self.root.clone(),
+                source,
+            })?;
+            if !shard.file_type().ok().is_some_and(|t| t.is_dir()) {
+                continue;
+            }
+            let shard_path = shard.path();
+            for entry in std::fs::read_dir(&shard_path).map_err(|source| StoreError::Io {
+                path: shard_path.clone(),
+                source,
+            })? {
+                let entry = entry.map_err(|source| StoreError::Io {
+                    path: shard_path.clone(),
+                    source,
+                })?;
+                std::fs::remove_file(entry.path()).map_err(|source| StoreError::Io {
+                    path: entry.path(),
+                    source,
+                })?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Walk the store and return any entry whose JSON no longer
+    /// deserializes cleanly. Caller-initiated `cache clear` is the
+    /// remediation; `verify` itself doesn't repair anything.
+    pub fn verify(&self) -> StoreResult<Vec<PathBuf>> {
+        let mut corrupt = Vec::new();
+        if !self.root.is_dir() {
+            return Ok(corrupt);
+        }
+        for shard in std::fs::read_dir(&self.root).map_err(|source| StoreError::Io {
+            path: self.root.clone(),
+            source,
+        })? {
+            let shard = shard.map_err(|source| StoreError::Io {
+                path: self.root.clone(),
+                source,
+            })?;
+            if !shard.file_type().ok().is_some_and(|t| t.is_dir()) {
+                continue;
+            }
+            for entry in std::fs::read_dir(shard.path()).map_err(|source| StoreError::Io {
+                path: shard.path(),
+                source,
+            })? {
+                let entry = entry.map_err(|source| StoreError::Io {
+                    path: shard.path(),
+                    source,
+                })?;
+                let path = entry.path();
+                match std::fs::read(&path) {
+                    Ok(bytes) => {
+                        if serde_json::from_slice::<CachedResult>(&bytes).is_err() {
+                            corrupt.push(path);
+                        }
+                    }
+                    Err(_) => corrupt.push(path),
+                }
+            }
+        }
+        Ok(corrupt)
     }
 }
 
