@@ -7,6 +7,7 @@
 pub mod lifecycle;
 pub mod registry;
 pub mod server;
+pub mod speculative;
 pub mod watcher;
 
 pub use lifecycle::IDLE_LINGER;
