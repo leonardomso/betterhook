@@ -54,6 +54,9 @@ struct ResolvedJob {
 struct JobPlan {
     commands: Vec<String>,
     cwd: PathBuf,
+    /// Files the job would operate on after `glob` + `exclude` filter.
+    /// Phase 30 uses this as the content-hash input for the CA cache.
+    files: Vec<PathBuf>,
 }
 
 /// Default parallel limit when the hook doesn't specify one.
@@ -375,6 +378,41 @@ async fn run_parallel(
                 continue;
             };
 
+            // Phase 30: CA cache hit path. Only concurrent_safe jobs
+            // are cacheable — unsafe jobs may have side effects that
+            // we can't faithfully replay.
+            if job.concurrent_safe {
+                if let Ok(Some(cached)) =
+                    crate::cache::lookup(common_dir, &job, &plan.files)
+                {
+                    let _ = tx
+                        .send(OutputEvent::JobCacheHit {
+                            job: job.name.clone(),
+                            files: plan.files.len(),
+                        })
+                        .await;
+                    for event in cached.events {
+                        let _ = tx.send(event).await;
+                    }
+                    if cached.exit != 0 {
+                        failed = true;
+                        if fail_fast {
+                            cancel.cancel();
+                        }
+                    }
+                    jobs_run += 1;
+                    release_children(
+                        &graph,
+                        idx,
+                        &pending_clone_ref(&pending),
+                        &mut pending,
+                        &started,
+                        &mut ready,
+                    );
+                    continue;
+                }
+            }
+
             // Spawn the real job.
             let tx_spawn = tx.clone();
             let hook_name_spawn = hook_name.clone();
@@ -382,27 +420,49 @@ async fn run_parallel(
             let worktree_spawn = worktree.to_path_buf();
             let common_dir_spawn = common_dir.to_path_buf();
             let cancel_spawn = cancel.clone();
+            let plan_for_spawn = plan.clone();
             running += 1;
             set.spawn(async move {
                 let result = async {
                     let before_unstaged =
                         snapshot_unstaged_if_needed(&job, &worktree_spawn).await?;
-                    let (_lock, lock_env) =
-                        acquire_if_isolated(&job, &common_dir_spawn, &worktree_spawn, no_locks, &tx_spawn)
-                            .await;
+                    let (_lock, lock_env) = acquire_if_isolated(
+                        &job,
+                        &common_dir_spawn,
+                        &worktree_spawn,
+                        no_locks,
+                        &tx_spawn,
+                    )
+                    .await;
                     let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name_spawn)];
                     extra_env.extend(lock_env);
+
+                    // Capture events as they fire so we can persist
+                    // them into the CA cache on success. The tee task
+                    // forwards each event to `tx_spawn` unchanged and
+                    // also pushes into a local Vec we drain later.
+                    let (local_tx, mut local_rx) = mpsc::channel::<OutputEvent>(256);
+                    let tx_forward = tx_spawn.clone();
+                    let tee = tokio::spawn(async move {
+                        let mut captured: Vec<OutputEvent> = Vec::new();
+                        while let Some(ev) = local_rx.recv().await {
+                            captured.push(ev.clone());
+                            let _ = tx_forward.send(ev).await;
+                        }
+                        captured
+                    });
+
                     let mut job_failed = false;
-                    for cmd in &plan.commands {
+                    for cmd in &plan_for_spawn.commands {
                         let exit = run_command(
                             &job.name,
                             cmd,
-                            &plan.cwd,
+                            &plan_for_spawn.cwd,
                             &job.env,
                             &extra_env,
                             job.timeout,
                             Some(&cancel_spawn),
-                            &tx_spawn,
+                            &local_tx,
                         )
                         .await?;
                         if exit != 0 {
@@ -410,10 +470,36 @@ async fn run_parallel(
                             break;
                         }
                     }
+                    drop(local_tx);
+                    let captured = tee.await.unwrap_or_default();
+
                     if let Some(before) = before_unstaged {
                         let _g = git_lock_spawn.lock().await;
                         apply_stage_fixed(&worktree_spawn, &before).await?;
                     }
+
+                    // Cache the events on a clean run of a
+                    // concurrent_safe job. Best-effort: cache write
+                    // failures log but don't fail the hook.
+                    if job.concurrent_safe && !job_failed && !plan_for_spawn.files.is_empty() {
+                        let result = crate::cache::CachedResult {
+                            exit: 0,
+                            events: captured,
+                            created_at: std::time::SystemTime::now(),
+                        };
+                        if let Err(e) = crate::cache::store_result(
+                            &common_dir_spawn,
+                            &job,
+                            &plan_for_spawn.files,
+                            &result,
+                        ) {
+                            eprintln!(
+                                "betterhook: WARNING — cache write for '{}' failed: {e}",
+                                job.name
+                            );
+                        }
+                    }
+
                     Ok::<_, RunError>(JobOutcome { failed: job_failed })
                 }
                 .await;
@@ -593,6 +679,7 @@ async fn resolve_job_plan(hook: &Hook, job: &Job, worktree: &Path) -> RunResult<
         return Ok(Some(JobPlan {
             commands: vec![job.run.clone()],
             cwd,
+            files: Vec::new(),
         }));
     }
 
@@ -620,7 +707,17 @@ async fn resolve_job_plan(hook: &Hook, job: &Job, worktree: &Path) -> RunResult<
     } else {
         vec![job.run.clone()]
     };
-    Ok(Some(JobPlan { commands, cwd }))
+    // Store absolute paths so the cache can hash them regardless of
+    // which cwd the runner later changes to.
+    let abs_files: Vec<PathBuf> = files
+        .iter()
+        .map(|p| if p.is_absolute() { p.clone() } else { worktree.join(p) })
+        .collect();
+    Ok(Some(JobPlan {
+        commands,
+        cwd,
+        files: abs_files,
+    }))
 }
 
 #[cfg(test)]

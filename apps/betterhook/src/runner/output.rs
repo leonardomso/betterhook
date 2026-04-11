@@ -41,6 +41,10 @@ pub enum OutputEvent {
         job: String,
         reason: String,
     },
+    JobCacheHit {
+        job: String,
+        files: usize,
+    },
     Summary {
         ok: bool,
         jobs_run: usize,
@@ -158,6 +162,15 @@ fn write_event(ev: &OutputEvent) {
                 "∘".dimmed(),
                 job.color(c).bold(),
                 format!("skipped ({reason})").dimmed()
+            );
+        }
+        OutputEvent::JobCacheHit { job, files } => {
+            let c = color_for(job);
+            eprintln!(
+                "{} {} {}",
+                "⚡".color(c),
+                job.color(c).bold(),
+                format!("cache hit ({files} files)").dimmed()
             );
         }
         OutputEvent::Summary {
