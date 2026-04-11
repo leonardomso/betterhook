@@ -33,8 +33,14 @@ exec \"{betterhook_bin}\" __dispatch \\
 /// Compute `sha256:<hex>` for arbitrary bytes.
 #[must_use]
 pub fn sha256_hex(data: &[u8]) -> String {
+    use std::fmt::Write;
     let digest = Sha256::digest(data);
-    format!("sha256:{digest:x}")
+    let mut out = String::with_capacity(7 + 64);
+    out.push_str("sha256:");
+    for byte in digest.as_slice() {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
 }
 
 #[cfg(test)]

@@ -46,7 +46,12 @@ fn render_notes(report: &MigrationReport, from: &std::path::Path, to: &std::path
     use std::fmt::Write;
     let mut out = String::new();
     out.push_str("# Betterhook migration notes\n\n");
-    let _ = writeln!(out, "Converted `{}` to `{}`.\n", from.display(), to.display());
+    let _ = writeln!(
+        out,
+        "Converted `{}` to `{}`.\n",
+        from.display(),
+        to.display()
+    );
     if report.notes.is_empty() {
         out.push_str("No changes or unsupported features encountered.\n");
     } else {
