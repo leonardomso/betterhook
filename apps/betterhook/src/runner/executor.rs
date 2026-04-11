@@ -22,7 +22,7 @@ use crate::git::{
 };
 
 use super::RunResult;
-use super::output::{OutputEvent, tty_sink};
+use super::output::{OutputEvent, SinkKind, sink};
 use super::proc::{Cancel, run_command};
 
 /// Async mutex that serializes `git add` / `git stash` / other index
@@ -65,6 +65,8 @@ pub struct RunOptions {
     pub skip: Vec<String>,
     /// If non-empty, run only these jobs (`BETTERHOOK_ONLY` + CLI `--only`).
     pub only: Vec<String>,
+    /// Which output sink to use (TTY vs NDJSON).
+    pub sink: SinkKind,
 }
 
 impl RunOptions {
@@ -75,6 +77,7 @@ impl RunOptions {
         Self {
             skip: parse_env_list("BETTERHOOK_SKIP"),
             only: parse_env_list("BETTERHOOK_ONLY"),
+            sink: SinkKind::Tty,
         }
     }
 
@@ -110,7 +113,7 @@ pub async fn run_hook_with_options(
     worktree: &Path,
     options: RunOptions,
 ) -> RunResult<ExecutionReport> {
-    let (tx, writer) = tty_sink();
+    let (tx, writer) = sink(options.sink);
     let start = Instant::now();
 
     // Single per-hook lock covering every git index mutation (stash,
@@ -635,6 +638,7 @@ mod tests {
         let opts = RunOptions {
             skip: vec!["should-skip".to_owned()],
             only: Vec::new(),
+            sink: SinkKind::Tty,
         };
         let rep = run_hook_with_options(&hook, &root, opts).await.unwrap();
         assert!(rep.ok, "should-skip was filtered out, hook should pass");
@@ -656,6 +660,7 @@ mod tests {
         let opts = RunOptions {
             skip: Vec::new(),
             only: vec!["lint".to_owned()],
+            sink: SinkKind::Tty,
         };
         let rep = run_hook_with_options(&hook, &root, opts).await.unwrap();
         assert!(rep.ok);

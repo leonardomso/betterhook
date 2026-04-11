@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use betterhook::dispatch::{Dispatch, resolve};
-use betterhook::runner::{RunOptions, run_hook_with_options};
+use betterhook::runner::{RunOptions, SinkKind, run_hook_with_options};
 
 use crate::exit_codes;
 
@@ -27,6 +27,9 @@ pub struct Args {
     /// Comma-separated job names to run exclusively. Overrides `BETTERHOOK_ONLY`.
     #[arg(long, value_delimiter = ',')]
     pub only: Vec<String>,
+    /// Emit NDJSON events instead of the colored TTY output.
+    #[arg(long)]
+    pub json: bool,
     /// Positional args passed through from git after the `--` separator.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub extra: Vec<String>,
@@ -47,6 +50,9 @@ pub async fn run(args: Args) -> miette::Result<()> {
             }
             if !args.only.is_empty() {
                 options.only = args.only;
+            }
+            if args.json {
+                options.sink = SinkKind::Json;
             }
             let report = run_hook_with_options(hook, &args.worktree, options).await?;
             if !report.ok {

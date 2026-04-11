@@ -9,15 +9,18 @@
 use std::time::Duration;
 
 use owo_colors::{AnsiColors, OwoColorize};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Stream {
     Stdout,
     Stderr,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OutputEvent {
     JobStarted {
         job: String,
@@ -31,6 +34,7 @@ pub enum OutputEvent {
     JobFinished {
         job: String,
         exit: i32,
+        #[serde(with = "humantime_serde")]
         duration: Duration,
     },
     JobSkipped {
@@ -41,6 +45,7 @@ pub enum OutputEvent {
         ok: bool,
         jobs_run: usize,
         jobs_skipped: usize,
+        #[serde(with = "humantime_serde")]
         total: Duration,
     },
 }
@@ -66,18 +71,46 @@ fn color_for(job: &str) -> AnsiColors {
     PALETTE[(hash as usize) % PALETTE.len()]
 }
 
-/// Create a paired `(tx, writer_handle)` for the TTY output mode.
+/// Selects which output sink the multiplexer writes to.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum SinkKind {
+    /// Colorized line-prefixed output for humans (default).
+    #[default]
+    Tty,
+    /// One NDJSON line per event, for agents.
+    Json,
+}
+
+/// Create a paired `(tx, writer_handle)` for the default TTY sink.
 /// Dropping the sender closes the channel and the writer task exits.
 #[must_use]
 pub fn tty_sink() -> (mpsc::Sender<OutputEvent>, tokio::task::JoinHandle<()>) {
+    sink(SinkKind::Tty)
+}
+
+/// Create an event sink of the requested kind.
+#[must_use]
+pub fn sink(kind: SinkKind) -> (mpsc::Sender<OutputEvent>, tokio::task::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel(256);
-    let handle = tokio::spawn(tty_writer(rx));
+    let handle = match kind {
+        SinkKind::Tty => tokio::spawn(tty_writer(rx)),
+        SinkKind::Json => tokio::spawn(json_writer(rx)),
+    };
     (tx, handle)
 }
 
 async fn tty_writer(mut rx: mpsc::Receiver<OutputEvent>) {
     while let Some(ev) = rx.recv().await {
         write_event(&ev);
+    }
+}
+
+async fn json_writer(mut rx: mpsc::Receiver<OutputEvent>) {
+    while let Some(ev) = rx.recv().await {
+        match serde_json::to_string(&ev) {
+            Ok(line) => println!("{line}"),
+            Err(e) => eprintln!("betterhook: json serialize error: {e}"),
+        }
     }
 }
 
