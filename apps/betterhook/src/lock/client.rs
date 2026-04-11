@@ -92,7 +92,6 @@ pub fn lock_dir(common_dir: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use crate::config::ToolPathScope;
-    use std::path::PathBuf;
 
     #[test]
     fn key_for_tool_mutex() {
@@ -146,7 +145,4 @@ mod tests {
         assert_ne!(k1, k2);
     }
 
-    // Unused import guard.
-    #[allow(dead_code)]
-    fn _path_buf_sanity(_: PathBuf) {}
 }

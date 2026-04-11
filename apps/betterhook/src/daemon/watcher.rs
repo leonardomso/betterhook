@@ -10,7 +10,7 @@
 //! live but empty handle that reports `disabled_reason`.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc;
@@ -135,11 +135,6 @@ fn build_exclude_filter(patterns: &[String]) -> Result<ExcludeFilter, globset::E
     })
 }
 
-// Silence unused import in the unused arc type; `Arc` is needed at
-// a macro-heavy expansion point where the compiler doesn't always
-// detect usage.
-#[allow(dead_code)]
-fn _force_arc_mutex(_: Arc<Mutex<()>>) {}
 
 #[cfg(test)]
 mod tests {

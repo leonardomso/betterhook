@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dispatch::find_config;
 use crate::error::ConfigResult;
-use crate::git::{GitResult, git_common_dir, git_dir, show_toplevel};
+use crate::git::{git_common_dir, git_dir, show_toplevel};
 use crate::install::{InstalledManifest, MANIFEST_FILENAME};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,7 +247,3 @@ fn summarize_dag(hook: &crate::config::Hook) -> Option<DagSummary> {
     })
 }
 
-// Silence unused-import complaints when the optional git result path
-// above is eliminated by dead-code analysis.
-#[allow(dead_code)]
-fn _gitres_sanity(_: GitResult<()>) {}
