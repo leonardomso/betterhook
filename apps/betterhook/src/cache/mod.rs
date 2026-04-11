@@ -19,7 +19,8 @@ pub use hash::{
     ArgsHash, CacheKey, ContentHash, ToolHash, args_hash, combine_key, hash_bytes, hash_file,
 };
 pub use lookup::{
-    args_hash_from_job, derive_key, hash_file_set, lookup, store as store_result, tool_hash_proxy,
+    args_hash_from_job, derive_key, hash_file_set, inputs_fresh, lookup, snapshot_inputs,
+    store as store_result, tool_hash_proxy,
 };
-pub use store::{CachedResult, Stats, Store, StoreError, cache_dir};
+pub use store::{CachedInput, CachedResult, Stats, Store, StoreError, cache_dir};
 pub use tool_hash::{resolve_tool_hash, try_resolve_tool_hash};

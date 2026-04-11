@@ -78,6 +78,22 @@ pub struct CachedResult {
     /// `cache stats` and `cache verify` plus phase 39's freshness check.
     #[serde(with = "systemtime_as_secs")]
     pub created_at: SystemTime,
+    /// Per-input-file mtime snapshot taken when the entry was written.
+    /// Phase 39 uses this to reject a cache hit whose input files have
+    /// been modified since the speculative run captured the result.
+    /// `#[serde(default)]` keeps older entries readable.
+    #[serde(default)]
+    pub inputs: Vec<CachedInput>,
+}
+
+/// One input file recorded alongside a cache entry. The commit-time
+/// runner compares the current mtime against `modified_at` and treats
+/// any divergence as a cache miss (phase 39's freshness gate).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedInput {
+    pub path: PathBuf,
+    #[serde(with = "systemtime_opt_secs")]
+    pub modified_at: Option<SystemTime>,
 }
 
 mod systemtime_as_secs {
@@ -406,6 +422,7 @@ mod tests {
                 },
             ],
             created_at: SystemTime::now(),
+            inputs: Vec::new(),
         };
 
         store.put(&key, &result).unwrap();
@@ -425,6 +442,7 @@ mod tests {
             exit: 0,
             events: Vec::new(),
             created_at: SystemTime::now(),
+            inputs: Vec::new(),
         };
         store.put(&k, &result).unwrap();
 
@@ -448,6 +466,7 @@ mod tests {
                     exit: 0,
                     events: Vec::new(),
                     created_at: SystemTime::now(),
+                    inputs: Vec::new(),
                 },
             )
             .unwrap();

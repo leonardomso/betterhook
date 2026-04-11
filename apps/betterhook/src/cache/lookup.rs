@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::config::Job;
 
 use super::hash::{ArgsHash, CacheKey, ContentHash, ToolHash, args_hash, hash_bytes, hash_file};
-use super::store::{CachedResult, Store, StoreError, StoreResult};
+use super::store::{CachedInput, CachedResult, Store, StoreError, StoreResult};
 use super::tool_hash::resolve_tool_hash;
 
 /// Combined blake3 hash of every file in `files`, sorted by path.
@@ -77,9 +77,64 @@ pub fn derive_key(job: &Job, files: &[PathBuf]) -> io::Result<CacheKey> {
     })
 }
 
+/// Capture an mtime snapshot of `files` suitable for a `CachedResult`'s
+/// freshness gate. Missing files store `None`.
+#[must_use]
+pub fn snapshot_inputs(files: &[PathBuf]) -> Vec<CachedInput> {
+    files
+        .iter()
+        .map(|p| CachedInput {
+            path: p.clone(),
+            modified_at: std::fs::metadata(p).and_then(|m| m.modified()).ok(),
+        })
+        .collect()
+}
+
+/// Return true if every input in `cached` still has the same mtime on
+/// disk as when the cache entry was written. Missing inputs, changed
+/// mtimes, or any I/O error count as stale.
+///
+/// The check is deliberately simple: an mtime match is a strong enough
+/// signal for the speculative runner because file content is already
+/// bound into the cache key via `hash_file_set`. The mtime gate exists
+/// to catch the edge case where two saves produce bit-identical content
+/// but the user expects the "live" version to re-run.
+///
+/// Comparison rounds both sides to whole seconds so sub-second jitter
+/// across the serialize/deserialize boundary doesn't flap every entry.
+#[must_use]
+pub fn inputs_fresh(cached: &[CachedInput]) -> bool {
+    use std::time::UNIX_EPOCH;
+    for input in cached {
+        let Ok(meta) = std::fs::metadata(&input.path) else {
+            return false;
+        };
+        let Ok(current) = meta.modified() else {
+            return false;
+        };
+        let Some(snapshot) = input.modified_at else {
+            return false;
+        };
+        let Ok(current_secs) = current.duration_since(UNIX_EPOCH) else {
+            return false;
+        };
+        let Ok(snapshot_secs) = snapshot.duration_since(UNIX_EPOCH) else {
+            return false;
+        };
+        if current_secs.as_secs() != snapshot_secs.as_secs() {
+            return false;
+        }
+    }
+    true
+}
+
 /// Query the cache for a prior run of `job` against `files`. Returns
 /// the cached result on hit, `None` on miss, or a `StoreError` on
 /// I/O / decode failure.
+///
+/// Phase 39: entries that carry an `inputs` snapshot are rejected if
+/// any tracked file's mtime has moved on disk — this keeps commit-time
+/// hits tied to the exact on-disk state the speculative runner saw.
 pub fn lookup(
     common_dir: &Path,
     job: &Job,
@@ -89,7 +144,13 @@ pub fn lookup(
         path: common_dir.to_path_buf(),
         source,
     })?;
-    Store::new(common_dir).get(&key)
+    let Some(result) = Store::new(common_dir).get(&key)? else {
+        return Ok(None);
+    };
+    if !result.inputs.is_empty() && !inputs_fresh(&result.inputs) {
+        return Ok(None);
+    }
+    Ok(Some(result))
 }
 
 /// Store a result for `(job, files)` in the cache. Best-effort —
@@ -214,6 +275,7 @@ mod tests {
                 line: "a.ts: ok".to_owned(),
             }],
             created_at: SystemTime::now(),
+            inputs: snapshot_inputs(&files),
         };
         store(common.path(), &job, &files, &result).unwrap();
 
@@ -224,5 +286,38 @@ mod tests {
         // Modifying the file invalidates the lookup.
         std::fs::write(&a, b"beta").unwrap();
         assert!(lookup(common.path(), &job, &files).unwrap().is_none());
+    }
+
+    #[test]
+    fn freshness_gate_rejects_touched_input() {
+        let common = TempDir::new().unwrap();
+        let file_dir = TempDir::new().unwrap();
+        let a = file_dir.path().join("a.ts");
+        std::fs::write(&a, b"alpha").unwrap();
+
+        let job = job_with("eslint --cache {files}", &[]);
+        let files = vec![a.clone()];
+
+        let result = CachedResult {
+            exit: 0,
+            events: Vec::new(),
+            created_at: SystemTime::now(),
+            inputs: snapshot_inputs(&files),
+        };
+        store(common.path(), &job, &files, &result).unwrap();
+        assert!(lookup(common.path(), &job, &files).unwrap().is_some());
+
+        // Touch the file without changing content: mtime moves, content
+        // hash stays the same, but the freshness gate should still treat
+        // it as a miss. `File::set_modified` is the stable primitive.
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        let f = std::fs::File::options().write(true).open(&a).unwrap();
+        f.set_modified(later).unwrap();
+        drop(f);
+
+        assert!(
+            lookup(common.path(), &job, &files).unwrap().is_none(),
+            "mtime bump should invalidate a fresh cache entry"
+        );
     }
 }

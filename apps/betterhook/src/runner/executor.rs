@@ -482,10 +482,12 @@ async fn run_parallel(
                     // concurrent_safe job. Best-effort: cache write
                     // failures log but don't fail the hook.
                     if job.concurrent_safe && !job_failed && !plan_for_spawn.files.is_empty() {
+                        let inputs = crate::cache::snapshot_inputs(&plan_for_spawn.files);
                         let result = crate::cache::CachedResult {
                             exit: 0,
                             events: captured,
                             created_at: std::time::SystemTime::now(),
+                            inputs,
                         };
                         if let Err(e) = crate::cache::store_result(
                             &common_dir_spawn,
