@@ -32,6 +32,13 @@ pub enum RunError {
     #[diagnostic(transparent)]
     Config(#[from] ConfigError),
 
+    #[error("capability DAG error")]
+    #[diagnostic(transparent)]
+    Dag {
+        #[from]
+        source: crate::runner::dag::DagError,
+    },
+
     #[error("failed to build glob pattern")]
     #[diagnostic(code(betterhook::runner::glob))]
     Glob(#[from] globset::Error),

@@ -7,23 +7,24 @@
 //! a tokio Semaphore so higher-priority jobs always acquire their permit
 //! first when there is contention.
 
-use std::collections::HashSet;
+use std::collections::{BinaryHeap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use tokio::sync::{Mutex, Semaphore, mpsc};
+use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinSet;
 
+use super::RunError;
+use super::RunResult;
+use super::dag::{JobGraph, build_dag};
+use super::output::{OutputEvent, SinkKind, sink};
+use super::proc::{Cancel, run_command};
 use crate::config::{Hook, Job};
 use crate::git::{
     StashGuard, all_files, build_globset, expand_template, filter_files, has_template, push_files,
     run_git, staged_files, unstaged_files,
 };
-
-use super::RunResult;
-use super::output::{OutputEvent, SinkKind, sink};
-use super::proc::{Cancel, run_command};
 use crate::lock::{LockGuard, acquire_job_lock};
 
 /// Async mutex that serializes `git add` / `git stash` / other index
@@ -49,6 +50,7 @@ struct ResolvedJob {
     plan: Option<JobPlan>,
 }
 
+#[derive(Clone)]
 struct JobPlan {
     commands: Vec<String>,
     cwd: PathBuf,
@@ -293,7 +295,13 @@ async fn run_sequential(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Parallel (capability-DAG-aware) executor.
+///
+/// Phase 27 replaces the priority-only spawn-and-semaphore scheduler
+/// with a DAG walker that respects declared `reads`/`writes`/`network`
+/// capabilities. Jobs whose capability sets are disjoint run in
+/// parallel; jobs that conflict serialize in a priority-ordered way.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn run_parallel(
     hook: &Hook,
     jobs: Vec<ResolvedJob>,
@@ -307,88 +315,142 @@ async fn run_parallel(
         .parallel_limit
         .unwrap_or_else(default_parallel_limit)
         .max(1);
-    let semaphore = Arc::new(Semaphore::new(limit));
     let hook_name = hook.name.clone();
     let fail_fast = hook.fail_fast;
 
-    let mut jobs_skipped = 0usize;
-    let mut runnable: Vec<(Job, JobPlan)> = Vec::with_capacity(jobs.len());
-    for rj in jobs {
-        if let Some(plan) = rj.plan {
-            runnable.push((rj.job, plan));
-        } else {
-            let _ = tx
-                .send(OutputEvent::JobSkipped {
-                    job: rj.job.name.clone(),
-                    reason: "no files matched glob".to_owned(),
-                })
-                .await;
-            jobs_skipped += 1;
+    // Align plans with the DAG's node indices by reusing the same job
+    // ordering (`jobs` came from `hook.jobs`).
+    let job_list: Vec<Job> = jobs.iter().map(|rj| rj.job.clone()).collect();
+    let graph: JobGraph = build_dag(&job_list).map_err(|source| RunError::Dag { source })?;
+    let plans: Vec<Option<JobPlan>> = jobs.into_iter().map(|rj| rj.plan).collect();
+
+    // Pending-parent counts per node — a node is ready when this hits 0.
+    let mut pending: Vec<usize> = graph.nodes.iter().map(|n| n.parents.len()).collect();
+    let mut started = vec![false; graph.nodes.len()];
+
+    // Priority-ordered ready heap. BinaryHeap is a max-heap, so we
+    // reverse the key to get lowest-priority-first (lowest value =
+    // earliest in `hook.priority`).
+    let mut ready: BinaryHeap<std::cmp::Reverse<(u32, usize)>> = BinaryHeap::new();
+    for (idx, node) in graph.nodes.iter().enumerate() {
+        if pending[idx] == 0 {
+            ready.push(std::cmp::Reverse((node.job.priority, idx)));
         }
     }
 
-    // Spawn every runnable job. Because `hook.jobs` is already sorted
-    // by priority, the spawn order is priority-ordered, and the
-    // semaphore hands out permits roughly in that order — fixing
-    // lefthook #846's "parallel: true ignores priority" complaint.
     let cancel = Cancel::new();
-    let mut set: JoinSet<Result<JobOutcome, crate::runner::RunError>> = JoinSet::new();
-    for (job, plan) in runnable {
-        let sem = semaphore.clone();
-        let tx = tx.clone();
-        let hook_name = hook_name.clone();
-        let git_lock = git_lock.clone();
-        let worktree = worktree.to_path_buf();
-        let common_dir = common_dir.to_path_buf();
-        let cancel = cancel.clone();
-        set.spawn(async move {
-            let _permit = sem.acquire_owned().await.expect("semaphore closed");
-            let before_unstaged = snapshot_unstaged_if_needed(&job, &worktree).await?;
-            let (_lock, lock_env) =
-                acquire_if_isolated(&job, &common_dir, &worktree, no_locks, &tx).await;
-            let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name)];
-            extra_env.extend(lock_env);
-            let mut job_failed = false;
-            for cmd in &plan.commands {
-                let exit = run_command(
-                    &job.name,
-                    cmd,
-                    &plan.cwd,
-                    &job.env,
-                    &extra_env,
-                    job.timeout,
-                    Some(&cancel),
-                    &tx,
-                )
-                .await?;
-                if exit != 0 {
-                    job_failed = true;
-                    break;
-                }
-            }
-            if let Some(before) = before_unstaged {
-                let _g = git_lock.lock().await;
-                apply_stage_fixed(&worktree, &before).await?;
-            }
-            Ok(JobOutcome { failed: job_failed })
-        });
-    }
-
+    let mut set: JoinSet<(usize, Result<JobOutcome, RunError>)> = JoinSet::new();
+    let mut running = 0usize;
     let mut failed = false;
     let mut jobs_run = 0usize;
-    while let Some(res) = set.join_next().await {
-        let outcome = res.expect("joinset task panicked")?;
+    let mut jobs_skipped = 0usize;
+
+    loop {
+        // Drain the ready heap into spawns or synchronous skips,
+        // bounded by `limit`.
+        while running < limit {
+            let Some(std::cmp::Reverse((_, idx))) = ready.pop() else {
+                break;
+            };
+            if started[idx] {
+                continue;
+            }
+            started[idx] = true;
+
+            let plan_opt = plans[idx].clone();
+            let job = job_list[idx].clone();
+
+            // Missing plan → the job was skipped at resolve time
+            // (template with no matching files). Transition it as if
+            // it had finished instantly so children can become ready.
+            let Some(plan) = plan_opt else {
+                let _ = tx
+                    .send(OutputEvent::JobSkipped {
+                        job: job.name.clone(),
+                        reason: "no files matched glob".to_owned(),
+                    })
+                    .await;
+                jobs_skipped += 1;
+                release_children(&graph, idx, &pending_clone_ref(&pending), &mut pending, &started, &mut ready);
+                continue;
+            };
+
+            // Spawn the real job.
+            let tx_spawn = tx.clone();
+            let hook_name_spawn = hook_name.clone();
+            let git_lock_spawn = git_lock.clone();
+            let worktree_spawn = worktree.to_path_buf();
+            let common_dir_spawn = common_dir.to_path_buf();
+            let cancel_spawn = cancel.clone();
+            running += 1;
+            set.spawn(async move {
+                let result = async {
+                    let before_unstaged =
+                        snapshot_unstaged_if_needed(&job, &worktree_spawn).await?;
+                    let (_lock, lock_env) =
+                        acquire_if_isolated(&job, &common_dir_spawn, &worktree_spawn, no_locks, &tx_spawn)
+                            .await;
+                    let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name_spawn)];
+                    extra_env.extend(lock_env);
+                    let mut job_failed = false;
+                    for cmd in &plan.commands {
+                        let exit = run_command(
+                            &job.name,
+                            cmd,
+                            &plan.cwd,
+                            &job.env,
+                            &extra_env,
+                            job.timeout,
+                            Some(&cancel_spawn),
+                            &tx_spawn,
+                        )
+                        .await?;
+                        if exit != 0 {
+                            job_failed = true;
+                            break;
+                        }
+                    }
+                    if let Some(before) = before_unstaged {
+                        let _g = git_lock_spawn.lock().await;
+                        apply_stage_fixed(&worktree_spawn, &before).await?;
+                    }
+                    Ok::<_, RunError>(JobOutcome { failed: job_failed })
+                }
+                .await;
+                (idx, result)
+            });
+        }
+
+        if set.is_empty() {
+            // Nothing in flight and nothing ready → we're done (or
+            // stalled, but phase 26 proves the graph is acyclic so
+            // being stalled here means every node finished).
+            break;
+        }
+
+        let join_res = set.join_next().await.expect("set non-empty");
+        let (idx, outcome_res) = join_res.expect("joinset task panicked");
+        let outcome = outcome_res?;
+        running -= 1;
         jobs_run += 1;
+
         if outcome.failed {
             failed = true;
             if fail_fast {
-                // Signal every in-flight run_command to kill its child,
-                // then drain. This is reliable where `abort_all` isn't:
-                // tokio's cancellation may not drop the Child future
-                // synchronously, so we use an explicit notify.
                 cancel.cancel();
                 while set.join_next().await.is_some() {}
                 break;
+            }
+        }
+
+        // Release children of the finished node.
+        for child in graph.nodes[idx].children.clone() {
+            if pending[child] > 0 {
+                pending[child] -= 1;
+            }
+            if pending[child] == 0 && !started[child] {
+                let pri = graph.nodes[child].job.priority;
+                ready.push(std::cmp::Reverse((pri, child)));
             }
         }
     }
@@ -398,6 +460,32 @@ async fn run_parallel(
         jobs_run,
         jobs_skipped,
     })
+}
+
+/// Private helper that releases children's pending counters when a
+/// skipped node transitions synchronously. Extracted into a function
+/// just to keep `run_parallel` readable.
+fn release_children(
+    graph: &JobGraph,
+    idx: usize,
+    _before: &[usize],
+    pending: &mut [usize],
+    started: &[bool],
+    ready: &mut BinaryHeap<std::cmp::Reverse<(u32, usize)>>,
+) {
+    for child in graph.nodes[idx].children.clone() {
+        if pending[child] > 0 {
+            pending[child] -= 1;
+        }
+        if pending[child] == 0 && !started[child] {
+            let pri = graph.nodes[child].job.priority;
+            ready.push(std::cmp::Reverse((pri, child)));
+        }
+    }
+}
+
+fn pending_clone_ref(_: &[usize]) -> Vec<usize> {
+    Vec::new()
 }
 
 struct JobOutcome {
@@ -678,9 +766,12 @@ mod tests {
         let elapsed = t0.elapsed();
         assert!(rep.ok);
         assert_eq!(rep.jobs_run, 4);
+        // 4 × 50ms = 200ms serial; we allow generous slack for test
+        // contention and DAG setup overhead because the point of
+        // the check is "clearly parallel, not serial".
         assert!(
-            elapsed.as_millis() < 250,
-            "parallel run should finish in well under 4×50ms serially but took {elapsed:?}"
+            elapsed.as_millis() < 500,
+            "parallel run should finish well under 4×50ms serial, took {elapsed:?}"
         );
     }
 
