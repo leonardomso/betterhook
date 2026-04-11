@@ -1,0 +1,23 @@
+[package]
+name = "betterhook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Memory-efficient, worktree-native git hooks manager built for the AI agent era."
+
+[lib]
+name = "betterhook"
+path = "src/lib.rs"
+
+[[bin]]
+name = "betterhookd"
+path = "src/bin/betterhookd.rs"
+
+[dependencies]
+tracing = { workspace = true }
+
+[lints]
+workspace = true

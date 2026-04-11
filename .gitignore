@@ -13,6 +13,17 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
+# Node / turborepo
+node_modules
+.turbo
+.pnpm-store
+
+# Local betterhook overrides (tracked-gitignored)
+betterhook.local.toml
+betterhook.local.yml
+betterhook.local.yaml
+betterhook.local.json
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

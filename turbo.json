@@ -1,0 +1,25 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "Cargo.toml", "../../Cargo.toml", "../../Cargo.lock", "../../rust-toolchain.toml"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "tests/**", "Cargo.toml"],
+      "outputs": []
+    },
+    "lint": {
+      "inputs": ["src/**", "Cargo.toml"],
+      "outputs": []
+    },
+    "bench": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "benches/**", "Cargo.toml"],
+      "outputs": []
+    }
+  }
+}
