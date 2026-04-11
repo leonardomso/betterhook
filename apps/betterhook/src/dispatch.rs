@@ -120,21 +120,24 @@ pub fn resolve_packages<'a>(
     }
 
     // Longest-prefix-wins: sort package paths by length descending.
-    let mut packages: Vec<&Package> = config.packages.values().collect();
-    packages.sort_by_key(|p| std::cmp::Reverse(p.path.as_os_str().len()));
+    // We walk packages in that order to find the best match for each
+    // file, then store the *index* into `config.packages.values()`
+    // rather than cloning the package name as a map key.
+    let mut packages: Vec<(usize, &Package)> = config.packages.values().enumerate().collect();
+    packages.sort_by_key(|(_, p)| std::cmp::Reverse(p.path.as_os_str().len()));
 
-    let mut buckets: std::collections::BTreeMap<String, Vec<PathBuf>> =
-        std::collections::BTreeMap::new();
+    let mut bucket_by_index: std::collections::HashMap<usize, Vec<PathBuf>> =
+        std::collections::HashMap::with_capacity(packages.len());
     let mut root_bucket: Vec<PathBuf> = Vec::new();
 
+    // v1.0.1: clone each file exactly once — into exactly one bucket —
+    // instead of cloning into a string-keyed map and then re-cloning
+    // the whole vec at output time.
     for file in staged_files {
         let mut matched = false;
-        for pkg in &packages {
+        for (idx, pkg) in &packages {
             if file.starts_with(&pkg.path) {
-                buckets
-                    .entry(pkg.name.clone())
-                    .or_default()
-                    .push(file.clone());
+                bucket_by_index.entry(*idx).or_default().push(file.clone());
                 matched = true;
                 break;
             }
@@ -148,9 +151,9 @@ pub fn resolve_packages<'a>(
     if !root_bucket.is_empty() {
         out.push(PackageMatch::Root(root_bucket));
     }
-    for pkg in config.packages.values() {
-        if let Some(files) = buckets.get(&pkg.name) {
-            out.push(PackageMatch::Package(pkg, files.clone()));
+    for (idx, pkg) in config.packages.values().enumerate() {
+        if let Some(files) = bucket_by_index.remove(&idx) {
+            out.push(PackageMatch::Package(pkg, files));
         }
     }
     out
