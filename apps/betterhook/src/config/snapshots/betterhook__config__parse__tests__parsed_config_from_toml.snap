@@ -76,4 +76,5 @@ Config {
             ],
         },
     },
+    packages: {},
 }

@@ -112,6 +112,7 @@ pub fn from_lefthook_yaml(source: &str) -> ConfigResult<(RawConfig, MigrationRep
         }),
         extends: Vec::new(),
         hooks: BTreeMap::new(),
+        packages: BTreeMap::new(),
     };
 
     for (key, value) in mapping {

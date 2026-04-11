@@ -24,6 +24,19 @@ pub struct RawConfig {
     pub extends: Vec<PathBuf>,
     #[serde(default)]
     pub hooks: BTreeMap<String, RawHook>,
+    /// Monorepo packages (phase 33+). Each entry declares a
+    /// directory path filter and optional per-package hook
+    /// overlays that inherit from the root-level `hooks` map.
+    #[serde(default)]
+    pub packages: BTreeMap<String, RawPackage>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawPackage {
+    pub path: PathBuf,
+    #[serde(default)]
+    pub hooks: BTreeMap<String, RawHook>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
@@ -128,6 +141,19 @@ pub struct RawIsolateTable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub meta: Meta,
+    pub hooks: BTreeMap<String, Hook>,
+    /// Monorepo packages. Empty for single-package repos. Each
+    /// package inherits the root hooks and may override them.
+    pub packages: BTreeMap<String, Package>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Package {
+    pub name: String,
+    pub path: PathBuf,
+    /// Fully-resolved per-package hooks. Phase 35 layers package
+    /// overrides on top of root hooks here; phase 33 just stores
+    /// whatever the user declared directly.
     pub hooks: BTreeMap<String, Hook>,
 }
 
@@ -238,7 +264,31 @@ impl RawConfig {
             hooks.insert(hook_name, hook);
         }
 
-        Ok(Config { meta, hooks })
+        let mut packages = BTreeMap::new();
+        for (pkg_name, raw_pkg) in self.packages {
+            let mut pkg_hooks = BTreeMap::new();
+            // Phase 33 lowers every hook the package declared. Phase 35
+            // will overlay these on top of the root hooks during
+            // dispatch so packages can add-or-override per-job.
+            for (hook_name, raw_hook) in raw_pkg.hooks {
+                let hook = lower_hook(&hook_name, raw_hook)?;
+                pkg_hooks.insert(hook_name, hook);
+            }
+            packages.insert(
+                pkg_name.clone(),
+                Package {
+                    name: pkg_name,
+                    path: raw_pkg.path,
+                    hooks: pkg_hooks,
+                },
+            );
+        }
+
+        Ok(Config {
+            meta,
+            hooks,
+            packages,
+        })
     }
 }
 
@@ -357,6 +407,22 @@ impl RawConfig {
                 .entry(hook_name)
                 .and_modify(|base_hook| base_hook.merge_overlay(overlay_hook.clone()))
                 .or_insert(overlay_hook);
+        }
+        for (pkg_name, overlay_pkg) in overlay.packages {
+            self.packages
+                .entry(pkg_name)
+                .and_modify(|base_pkg| {
+                    // Package path is replaced; hooks merge recursively.
+                    overlay_pkg.path.clone_into(&mut base_pkg.path);
+                    for (hook_name, hook) in overlay_pkg.hooks.clone() {
+                        base_pkg
+                            .hooks
+                            .entry(hook_name)
+                            .and_modify(|base_hook| base_hook.merge_overlay(hook.clone()))
+                            .or_insert(hook);
+                    }
+                })
+                .or_insert(overlay_pkg);
         }
     }
 }
