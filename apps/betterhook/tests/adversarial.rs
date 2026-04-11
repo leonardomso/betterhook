@@ -175,9 +175,11 @@ mod cache {
             args: ArgsHash("0".repeat(64)),
         };
         let rel = key.relative_path();
-        assert!(!rel.contains('\0'));
-        assert!(!rel.contains(".."));
-        assert_eq!(rel.matches('/').count(), 1, "exactly one shard slash");
+        let rel_str = rel.to_string_lossy();
+        assert!(!rel_str.contains('\0'));
+        assert!(!rel_str.contains(".."));
+        // One shard component plus one filename component.
+        assert_eq!(rel.components().count(), 2);
     }
 
     #[test]

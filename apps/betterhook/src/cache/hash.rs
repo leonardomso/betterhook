@@ -34,14 +34,16 @@ pub struct CacheKey {
 impl CacheKey {
     /// Produce the on-disk relative path for this key:
     /// `<tool-hex-first-2>/<tool-hex-rest>__<content-hex>__<args-hex>.json`.
+    ///
+    /// v1.0.1: returns a `PathBuf` directly so callers can `join()` it
+    /// to a root without an intermediate `String` allocation. The
+    /// `String` version was called once per cache lookup and stayed
+    /// on the hot path between hook start and cache hit.
     #[must_use]
-    pub fn relative_path(&self) -> String {
+    pub fn relative_path(&self) -> std::path::PathBuf {
         let (head, tail) = self.tool.0.split_at(2);
-        format!(
-            "{head}/{tail}__{c}__{a}.json",
-            c = self.content.0,
-            a = self.args.0
-        )
+        let file_name = format!("{tail}__{c}__{a}.json", c = self.content.0, a = self.args.0);
+        std::path::PathBuf::from(head).join(file_name)
     }
 }
 
@@ -128,11 +130,10 @@ mod tests {
             args: ArgsHash("a".repeat(64)),
         };
         let rel = key.relative_path();
-        assert!(rel.starts_with("ab/"));
-        assert!(rel.contains("__"));
+        assert!(rel.starts_with("ab"));
+        assert!(rel.to_string_lossy().contains("__"));
         assert!(
-            std::path::Path::new(&rel)
-                .extension()
+            rel.extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
         );
     }
