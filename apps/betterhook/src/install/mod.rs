@@ -86,6 +86,9 @@ pub struct InstallReport {
     pub hooks_dir: PathBuf,
     pub installed: Vec<String>,
     pub manifest_path: PathBuf,
+    /// Set when a launchd/systemd unit was written. The CLI surfaces
+    /// the included `load_command` so the user can finalize it.
+    pub unit: Option<crate::daemon::lifecycle::InstalledUnit>,
 }
 
 /// Outcome of a successful uninstall.
@@ -107,6 +110,14 @@ pub struct InstallOptions {
     pub only_hooks: Option<Vec<String>>,
     /// Unset a foreign `core.hooksPath` instead of refusing.
     pub takeover: bool,
+    /// Skip writing the launchd/systemd unit file (default: false).
+    /// Useful for transient repos, CI, or tests that don't want to
+    /// touch `~/Library/LaunchAgents/`.
+    pub skip_unit: bool,
+    /// Override the directory where the unit file is written. Tests
+    /// use this to write into a tempdir instead of the real platform
+    /// location.
+    pub unit_dir_override: Option<PathBuf>,
 }
 
 /// Install worktree-aware wrappers into `<common-dir>/hooks/` for every
@@ -161,6 +172,28 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
 
     let manifest_dir = common_dir.join("betterhook");
     ensure_dir(&manifest_dir)?;
+
+    // Install the persistent unit file so the coordinator daemon
+    // survives reboots. Best-effort — if the platform is unsupported
+    // or the user opted out via `--no-unit`, the manifest's
+    // `unit_path` stays None and the on-demand spawn path from the
+    // lock client continues to work as in v0.0.1.
+    let socket_path = manifest_dir.join("sock");
+    let unit = if opts.skip_unit {
+        None
+    } else {
+        crate::daemon::lifecycle::install_unit(
+            &common_dir,
+            &bin,
+            &socket_path,
+            opts.unit_dir_override.as_deref(),
+        )
+        .map_err(|source| InstallError::Io {
+            path: socket_path.clone(),
+            source,
+        })?
+    };
+
     let manifest_path = manifest_dir.join(MANIFEST_FILENAME);
     let manifest = InstalledManifest {
         wrapper_version: WRAPPER_VERSION,
@@ -168,6 +201,7 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
         betterhook_bin: bin_str,
         hooks: installed_shas,
         previous_core_hooks_path: None,
+        unit_path: unit.as_ref().map(|u| u.path.clone()),
     };
     write_manifest(&manifest_path, &manifest)?;
 
@@ -176,6 +210,7 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
         hooks_dir,
         installed: installed_order,
         manifest_path,
+        unit,
     })
 }
 
@@ -224,6 +259,19 @@ pub async fn uninstall(worktree: Option<PathBuf>) -> InstallResult<UninstallRepo
             Err(source) => {
                 return Err(InstallError::Io {
                     path: target,
+                    source,
+                });
+            }
+        }
+    }
+
+    // Tear down the launchd/systemd unit if we wrote one.
+    if let Some(unit_path) = &manifest.unit_path {
+        match crate::daemon::lifecycle::uninstall_unit(unit_path) {
+            Ok(_removed) => {}
+            Err(source) => {
+                return Err(InstallError::Io {
+                    path: unit_path.clone(),
                     source,
                 });
             }
@@ -369,6 +417,7 @@ run = "true"
 
         let report = install(InstallOptions {
             worktree: Some(root.clone()),
+            skip_unit: true,
             ..Default::default()
         })
         .await
@@ -394,6 +443,7 @@ run = "true"
 
         let first = install(InstallOptions {
             worktree: Some(root.clone()),
+            skip_unit: true,
             ..Default::default()
         })
         .await
@@ -402,6 +452,7 @@ run = "true"
 
         let second = install(InstallOptions {
             worktree: Some(root.clone()),
+            skip_unit: true,
             ..Default::default()
         })
         .await
@@ -418,6 +469,7 @@ run = "true"
 
         install(InstallOptions {
             worktree: Some(root.clone()),
+            skip_unit: true,
             ..Default::default()
         })
         .await
@@ -444,6 +496,7 @@ run = "true"
 
         let report = install(InstallOptions {
             worktree: Some(root.clone()),
+            skip_unit: true,
             ..Default::default()
         })
         .await
@@ -474,6 +527,7 @@ run = "true"
 
         let err = install(InstallOptions {
             worktree: Some(root.clone()),
+            skip_unit: true,
             ..Default::default()
         })
         .await
@@ -494,6 +548,7 @@ run = "true"
         install(InstallOptions {
             worktree: Some(root.clone()),
             takeover: true,
+            skip_unit: true,
             ..Default::default()
         })
         .await

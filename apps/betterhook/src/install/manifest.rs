@@ -27,4 +27,10 @@ pub struct InstalledManifest {
     /// If `install --takeover` unset a pre-existing `core.hooksPath`,
     /// this holds the previous value so `uninstall` can restore it.
     pub previous_core_hooks_path: Option<PathBuf>,
+    /// Path of the launchd plist (macOS) or systemd user unit (Linux)
+    /// written at install time. `None` on unsupported platforms or
+    /// when the user opted out via `--no-unit`. Uninstall removes the
+    /// file if set.
+    #[serde(default)]
+    pub unit_path: Option<PathBuf>,
 }

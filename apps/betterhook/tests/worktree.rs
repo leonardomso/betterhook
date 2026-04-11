@@ -123,6 +123,7 @@ async fn each_worktree_dispatches_to_its_own_config() {
     // shared common dir. All worktrees now share it.
     install(InstallOptions {
         worktree: Some(primary.clone()),
+        skip_unit: true,
         ..Default::default()
     })
     .await
@@ -183,6 +184,7 @@ async fn uninstall_refuses_when_other_worktree_still_has_config() {
 
     install(InstallOptions {
         worktree: Some(primary.clone()),
+        skip_unit: true,
         ..Default::default()
     })
     .await
