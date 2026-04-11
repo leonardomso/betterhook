@@ -11,6 +11,8 @@ mod common;
 use std::path::PathBuf;
 
 use betterhook::cache::{CachedResult, Store, lookup, snapshot_inputs, store_result};
+#[allow(unused_imports)]
+use betterhook::cache::{lookup_blocking, store_result_blocking};
 use betterhook::config::import::{self, ImportSource};
 use betterhook::config::{Hook, Job, load};
 use betterhook::dispatch::{Dispatch, find_config, resolve, resolve_packages};
@@ -228,7 +230,7 @@ async fn cache_round_trip_keeps_first_run_and_invalidates_on_change() {
     };
 
     // First lookup: miss.
-    assert!(lookup(&common, &job, &files).unwrap().is_none());
+    assert!(lookup(&common, &job, &files).await.unwrap().is_none());
 
     // Write a CachedResult and verify the lookup hits.
     let result = CachedResult {
@@ -237,13 +239,13 @@ async fn cache_round_trip_keeps_first_run_and_invalidates_on_change() {
         created_at: std::time::SystemTime::now(),
         inputs: snapshot_inputs(&files),
     };
-    store_result(&common, &job, &files, &result).unwrap();
-    assert!(lookup(&common, &job, &files).unwrap().is_some());
+    store_result(&common, &job, &files, &result).await.unwrap();
+    assert!(lookup(&common, &job, &files).await.unwrap().is_some());
 
     // Mutate the file. Cache must miss because the content hash moves.
     std::fs::write(&target, b"world").unwrap();
     assert!(
-        lookup(&common, &job, &files).unwrap().is_none(),
+        lookup(&common, &job, &files).await.unwrap().is_none(),
         "content change must invalidate the cache"
     );
 

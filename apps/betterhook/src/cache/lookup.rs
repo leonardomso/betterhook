@@ -135,7 +135,33 @@ pub fn inputs_fresh(cached: &[CachedInput]) -> bool {
 /// Phase 39: entries that carry an `inputs` snapshot are rejected if
 /// any tracked file's mtime has moved on disk — this keeps commit-time
 /// hits tied to the exact on-disk state the speculative runner saw.
-pub fn lookup(
+///
+/// v1.0.1: this is now `async` and delegates every filesystem syscall
+/// to `tokio::task::spawn_blocking` so a cache lookup can't stall the
+/// parallel executor's runtime worker. Callers on the hot path are
+/// `runner::executor::execute_job_in_dag` and `run_parallel`'s cache
+/// fast path.
+pub async fn lookup(
+    common_dir: &Path,
+    job: &Job,
+    files: &[PathBuf],
+) -> StoreResult<Option<CachedResult>> {
+    let common_dir = common_dir.to_path_buf();
+    let job = job.clone();
+    let files = files.to_vec();
+    tokio::task::spawn_blocking(move || lookup_blocking(&common_dir, &job, &files))
+        .await
+        .unwrap_or_else(|e| {
+            Err(StoreError::Io {
+                path: PathBuf::new(),
+                source: std::io::Error::other(format!("cache lookup task panicked: {e}")),
+            })
+        })
+}
+
+/// Synchronous lookup body. Stays in this module so tests and the
+/// afl/xtask fuzz harnesses keep working without a tokio runtime.
+pub fn lookup_blocking(
     common_dir: &Path,
     job: &Job,
     files: &[PathBuf],
@@ -156,7 +182,35 @@ pub fn lookup(
 /// Store a result for `(job, files)` in the cache. Best-effort —
 /// callers log-and-continue on error; cache writes should never fail
 /// a hook run.
-pub fn store(
+///
+/// v1.0.1: async entry point that moves the disk write onto
+/// `spawn_blocking`. The executor writes cache entries in-line at the
+/// end of each successful spawned job, so keeping this off the tokio
+/// worker is important for parallelism.
+pub async fn store(
+    common_dir: &Path,
+    job: &Job,
+    files: &[PathBuf],
+    result: &CachedResult,
+) -> StoreResult<()> {
+    let common_dir = common_dir.to_path_buf();
+    let job = job.clone();
+    let files = files.to_vec();
+    let result = result.clone();
+    tokio::task::spawn_blocking(move || store_blocking(&common_dir, &job, &files, &result))
+        .await
+        .unwrap_or_else(|e| {
+            Err(StoreError::Io {
+                path: PathBuf::new(),
+                source: std::io::Error::other(format!("cache store task panicked: {e}")),
+            })
+        })
+}
+
+/// Synchronous store body. Exposed so `snapshot_inputs` + freshness
+/// tests, plus the fuzz harnesses, can exercise the code without a
+/// tokio runtime.
+pub fn store_blocking(
     common_dir: &Path,
     job: &Job,
     files: &[PathBuf],
@@ -265,7 +319,7 @@ mod tests {
         let job = job_with("eslint --cache {files}", &[]);
         let files = vec![a.clone()];
 
-        assert!(lookup(common.path(), &job, &files).unwrap().is_none());
+        assert!(lookup_blocking(common.path(), &job, &files).unwrap().is_none());
 
         let result = CachedResult {
             exit: 0,
@@ -277,15 +331,15 @@ mod tests {
             created_at: SystemTime::now(),
             inputs: snapshot_inputs(&files),
         };
-        store(common.path(), &job, &files, &result).unwrap();
+        store_blocking(common.path(), &job, &files, &result).unwrap();
 
-        let cached = lookup(common.path(), &job, &files).unwrap();
+        let cached = lookup_blocking(common.path(), &job, &files).unwrap();
         assert!(cached.is_some());
         assert_eq!(cached.unwrap().exit, 0);
 
         // Modifying the file invalidates the lookup.
         std::fs::write(&a, b"beta").unwrap();
-        assert!(lookup(common.path(), &job, &files).unwrap().is_none());
+        assert!(lookup_blocking(common.path(), &job, &files).unwrap().is_none());
     }
 
     #[test]
@@ -304,8 +358,8 @@ mod tests {
             created_at: SystemTime::now(),
             inputs: snapshot_inputs(&files),
         };
-        store(common.path(), &job, &files, &result).unwrap();
-        assert!(lookup(common.path(), &job, &files).unwrap().is_some());
+        store_blocking(common.path(), &job, &files, &result).unwrap();
+        assert!(lookup_blocking(common.path(), &job, &files).unwrap().is_some());
 
         // Touch the file without changing content: mtime moves, content
         // hash stays the same, but the freshness gate should still treat
@@ -316,8 +370,35 @@ mod tests {
         drop(f);
 
         assert!(
-            lookup(common.path(), &job, &files).unwrap().is_none(),
+            lookup_blocking(common.path(), &job, &files).unwrap().is_none(),
             "mtime bump should invalidate a fresh cache entry"
         );
+    }
+
+    #[tokio::test]
+    async fn async_lookup_and_store_round_trip() {
+        // v1.0.1: `lookup`/`store` are async and delegate to
+        // spawn_blocking. This test exercises that path so a future
+        // regression that drops the offloading is caught immediately.
+        let common = TempDir::new().unwrap();
+        let file_dir = TempDir::new().unwrap();
+        let a = file_dir.path().join("a.ts");
+        std::fs::write(&a, b"alpha").unwrap();
+
+        let job = job_with("eslint --cache {files}", &[]);
+        let files = vec![a.clone()];
+
+        assert!(lookup(common.path(), &job, &files).await.unwrap().is_none());
+
+        let result = CachedResult {
+            exit: 0,
+            events: Vec::new(),
+            created_at: SystemTime::now(),
+            inputs: snapshot_inputs(&files),
+        };
+        store(common.path(), &job, &files, &result).await.unwrap();
+
+        let cached = lookup(common.path(), &job, &files).await.unwrap();
+        assert!(cached.is_some());
     }
 }

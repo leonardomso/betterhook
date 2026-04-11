@@ -384,7 +384,7 @@ async fn run_parallel(
             // we can't faithfully replay.
             if job.concurrent_safe {
                 if let Ok(Some(cached)) =
-                    crate::cache::lookup(ctx.common_dir, &job, &plan.files)
+                    crate::cache::lookup(ctx.common_dir, &job, &plan.files).await
                 {
                     let _ = ctx
                         .tx
@@ -599,7 +599,7 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
             created_at: std::time::SystemTime::now(),
             inputs,
         };
-        if let Err(e) = crate::cache::store_result(&common_dir, &job, &plan.files, &result) {
+        if let Err(e) = crate::cache::store_result(&common_dir, &job, &plan.files, &result).await {
             eprintln!("betterhook: WARNING — cache write for '{}' failed: {e}", job.name);
         }
     }
