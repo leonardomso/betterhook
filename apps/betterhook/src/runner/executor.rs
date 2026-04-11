@@ -23,7 +23,7 @@ use crate::git::{
 
 use super::RunResult;
 use super::output::{OutputEvent, tty_sink};
-use super::proc::run_command;
+use super::proc::{Cancel, run_command};
 
 /// Async mutex that serializes `git add` / `git stash` / other index
 /// operations across parallel jobs so concurrent writes to `.git/index`
@@ -58,9 +58,58 @@ fn default_parallel_limit() -> usize {
     std::thread::available_parallelism().map_or(4, std::num::NonZero::get)
 }
 
+/// Runtime filters applied to the hook's job list before execution.
+#[derive(Debug, Default, Clone)]
+pub struct RunOptions {
+    /// Job names to skip (`BETTERHOOK_SKIP` + CLI `--skip`).
+    pub skip: Vec<String>,
+    /// If non-empty, run only these jobs (`BETTERHOOK_ONLY` + CLI `--only`).
+    pub only: Vec<String>,
+}
+
+impl RunOptions {
+    /// Read `BETTERHOOK_SKIP` and `BETTERHOOK_ONLY` comma-separated env
+    /// vars. Empty vars are ignored.
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self {
+            skip: parse_env_list("BETTERHOOK_SKIP"),
+            only: parse_env_list("BETTERHOOK_ONLY"),
+        }
+    }
+
+    fn is_filtered(&self, job_name: &str) -> bool {
+        if !self.only.is_empty() && !self.only.iter().any(|n| n == job_name) {
+            return true;
+        }
+        self.skip.iter().any(|n| n == job_name)
+    }
+}
+
+fn parse_env_list(var: &str) -> Vec<String> {
+    std::env::var(var)
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Top-level entrypoint. Dispatches to the sequential or parallel
-/// implementation based on `hook.parallel`.
+/// implementation based on `hook.parallel`. Reads skip/only filters
+/// from the `BETTERHOOK_SKIP` and `BETTERHOOK_ONLY` env vars.
 pub async fn run_hook(hook: &Hook, worktree: &Path) -> RunResult<ExecutionReport> {
+    run_hook_with_options(hook, worktree, RunOptions::from_env()).await
+}
+
+/// Variant of [`run_hook`] that takes explicit [`RunOptions`] — used by
+/// the CLI when `--skip`/`--only` flags override the env vars.
+pub async fn run_hook_with_options(
+    hook: &Hook,
+    worktree: &Path,
+    options: RunOptions,
+) -> RunResult<ExecutionReport> {
     let (tx, writer) = tty_sink();
     let start = Instant::now();
 
@@ -78,7 +127,18 @@ pub async fn run_hook(hook: &Hook, worktree: &Path) -> RunResult<ExecutionReport
     };
 
     let mut resolved: Vec<ResolvedJob> = Vec::with_capacity(hook.jobs.len());
+    let mut filtered_out = 0usize;
     for job in &hook.jobs {
+        if options.is_filtered(&job.name) {
+            let _ = tx
+                .send(OutputEvent::JobSkipped {
+                    job: job.name.clone(),
+                    reason: "filtered by --skip/--only".to_owned(),
+                })
+                .await;
+            filtered_out += 1;
+            continue;
+        }
         let plan = resolve_job_plan(hook, job, worktree).await?;
         resolved.push(ResolvedJob {
             job: job.clone(),
@@ -105,13 +165,14 @@ pub async fn run_hook(hook: &Hook, worktree: &Path) -> RunResult<ExecutionReport
     }
 
     let report = exec_res?;
+    let jobs_skipped = report.jobs_skipped + filtered_out;
 
     let total = start.elapsed();
     let _ = tx
         .send(OutputEvent::Summary {
             ok: report.ok,
             jobs_run: report.jobs_run,
-            jobs_skipped: report.jobs_skipped,
+            jobs_skipped,
             total,
         })
         .await;
@@ -122,7 +183,7 @@ pub async fn run_hook(hook: &Hook, worktree: &Path) -> RunResult<ExecutionReport
         hook_name: hook.name.clone(),
         ok: report.ok,
         jobs_run: report.jobs_run,
-        jobs_skipped: report.jobs_skipped,
+        jobs_skipped,
         duration_ms: total.as_millis(),
     })
 }
@@ -161,8 +222,17 @@ async fn run_sequential(
 
         let extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook.name.clone())];
         for cmd in &plan.commands {
-            let exit =
-                run_command(&rj.job.name, cmd, &plan.cwd, &rj.job.env, &extra_env, tx).await?;
+            let exit = run_command(
+                &rj.job.name,
+                cmd,
+                &plan.cwd,
+                &rj.job.env,
+                &extra_env,
+                rj.job.timeout,
+                None,
+                tx,
+            )
+            .await?;
             if exit != 0 {
                 failed = true;
                 if hook.fail_fast {
@@ -221,6 +291,7 @@ async fn run_parallel(
     // by priority, the spawn order is priority-ordered, and the
     // semaphore hands out permits roughly in that order — fixing
     // lefthook #846's "parallel: true ignores priority" complaint.
+    let cancel = Cancel::new();
     let mut set: JoinSet<Result<JobOutcome, crate::runner::RunError>> = JoinSet::new();
     for (job, plan) in runnable {
         let sem = semaphore.clone();
@@ -228,14 +299,24 @@ async fn run_parallel(
         let hook_name = hook_name.clone();
         let git_lock = git_lock.clone();
         let worktree = worktree.to_path_buf();
+        let cancel = cancel.clone();
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore closed");
             let before_unstaged = snapshot_unstaged_if_needed(&job, &worktree).await?;
             let extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name)];
             let mut job_failed = false;
             for cmd in &plan.commands {
-                let exit =
-                    run_command(&job.name, cmd, &plan.cwd, &job.env, &extra_env, &tx).await?;
+                let exit = run_command(
+                    &job.name,
+                    cmd,
+                    &plan.cwd,
+                    &job.env,
+                    &extra_env,
+                    job.timeout,
+                    Some(&cancel),
+                    &tx,
+                )
+                .await?;
                 if exit != 0 {
                     job_failed = true;
                     break;
@@ -257,7 +338,11 @@ async fn run_parallel(
         if outcome.failed {
             failed = true;
             if fail_fast {
-                set.abort_all();
+                // Signal every in-flight run_command to kill its child,
+                // then drain. This is reliable where `abort_all` isn't:
+                // tokio's cancellation may not drop the Child future
+                // synchronously, so we use an explicit notify.
+                cancel.cancel();
                 while set.join_next().await.is_some() {}
                 break;
             }
@@ -519,6 +604,63 @@ mod tests {
             elapsed.as_millis() < 2_000,
             "fail_fast should abort the slow job, elapsed={elapsed:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn per_job_timeout_kills_child_and_reports_124() {
+        let (_d, root) = new_git_repo();
+        let mut job = stub_job("slow", "sleep 5");
+        job.timeout = Some(std::time::Duration::from_millis(200));
+        let hook = stub_hook("pre-commit", vec![job]);
+        let t0 = std::time::Instant::now();
+        let rep = run_hook(&hook, &root).await.unwrap();
+        let elapsed = t0.elapsed();
+        assert!(!rep.ok, "timed-out job reports failure");
+        assert!(
+            elapsed.as_millis() < 1_000,
+            "timeout should fire in ~200ms, took {elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_options_skip_filters_out_job() {
+        let (_d, root) = new_git_repo();
+        let hook = stub_hook(
+            "pre-commit",
+            vec![
+                stub_job("should-run", "true"),
+                stub_job("should-skip", "exit 1"),
+            ],
+        );
+        let opts = RunOptions {
+            skip: vec!["should-skip".to_owned()],
+            only: Vec::new(),
+        };
+        let rep = run_hook_with_options(&hook, &root, opts).await.unwrap();
+        assert!(rep.ok, "should-skip was filtered out, hook should pass");
+        assert_eq!(rep.jobs_run, 1);
+        assert_eq!(rep.jobs_skipped, 1);
+    }
+
+    #[tokio::test]
+    async fn run_options_only_runs_named_job() {
+        let (_d, root) = new_git_repo();
+        let hook = stub_hook(
+            "pre-commit",
+            vec![
+                stub_job("lint", "true"),
+                stub_job("test", "exit 1"),
+                stub_job("fmt", "true"),
+            ],
+        );
+        let opts = RunOptions {
+            skip: Vec::new(),
+            only: vec!["lint".to_owned()],
+        };
+        let rep = run_hook_with_options(&hook, &root, opts).await.unwrap();
+        assert!(rep.ok);
+        assert_eq!(rep.jobs_run, 1);
+        assert_eq!(rep.jobs_skipped, 2);
     }
 
     #[tokio::test]

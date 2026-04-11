@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 
 mod commands;
+mod exit_codes;
 
 #[derive(Parser, Debug)]
 #[command(

@@ -13,8 +13,9 @@ use std::path::PathBuf;
 use miette::Diagnostic;
 use thiserror::Error;
 
-pub use executor::{ExecutionReport, run_hook};
+pub use executor::{ExecutionReport, RunOptions, run_hook, run_hook_with_options};
 pub use output::{OutputEvent, Stream};
+pub use proc::{Cancel, EXIT_CANCELLED, EXIT_TIMEOUT};
 
 use crate::error::ConfigError;
 use crate::git::GitError;
