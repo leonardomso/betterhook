@@ -713,7 +713,7 @@ mod tests {
         let marker = dir.path().join("order.log");
         let make = |name: &str, idx: usize| {
             let mut j = stub_job(name, &format!("printf '{idx}\\n' >> {}", marker.display()));
-            j.priority = idx as u32;
+            j.priority = u32::try_from(idx).unwrap();
             j
         };
         let mut hook = stub_hook(
