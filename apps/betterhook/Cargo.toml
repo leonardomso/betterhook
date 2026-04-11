@@ -17,6 +17,7 @@ name = "betterhookd"
 path = "src/bin/betterhookd.rs"
 
 [dependencies]
+tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

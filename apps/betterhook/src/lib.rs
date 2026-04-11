@@ -6,5 +6,6 @@
 
 pub mod config;
 pub mod error;
+pub mod git;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
