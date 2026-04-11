@@ -25,6 +25,11 @@ pub struct Status {
     pub worktree: WorktreeInfo,
     pub installed: Option<InstalledInfo>,
     pub config: Option<ConfigInfo>,
+    /// Phase 40: speculative runner snapshot. Read from the sidecar
+    /// the daemon writes at `<common>/betterhook/speculative-stats.json`.
+    /// `None` means the daemon has never run in this repo.
+    #[serde(default)]
+    pub speculative: Option<crate::daemon::speculative::SpeculativeStats>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,6 +133,7 @@ pub async fn collect(worktree: Option<&Path>) -> StatusResult<Status> {
 
     let installed = read_installed(&common_dir).ok().flatten();
     let config = read_config(&toplevel).ok().flatten();
+    let speculative = crate::daemon::speculative::read_stats(&common_dir);
 
     Ok(Status {
         betterhook_version: crate::VERSION,
@@ -138,6 +144,7 @@ pub async fn collect(worktree: Option<&Path>) -> StatusResult<Status> {
         },
         installed,
         config,
+        speculative,
     })
 }
 
