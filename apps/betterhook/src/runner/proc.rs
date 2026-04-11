@@ -94,10 +94,27 @@ enum Outcome {
     WaitErr(std::io::Error),
 }
 
+/// Invocation parameters for [`run_command`]. Grouped into a struct
+/// so the orchestrator doesn't need eight positional arguments.
+pub struct CommandSpec<'a> {
+    pub job_name: &'a str,
+    pub cmd: &'a str,
+    pub cwd: &'a Path,
+    pub env: &'a BTreeMap<String, String>,
+    pub extra_env: &'a [(String, String)],
+    pub timeout: Option<Duration>,
+    pub cancel: Option<&'a Cancel>,
+    pub tx: &'a mpsc::Sender<OutputEvent>,
+}
+
 /// Run `cmd` via `sh -c`, streaming its output through `tx`.
 /// Returns the exit code (`-1` on signal, whatever `status.code()` yields,
 /// [`EXIT_TIMEOUT`] on timeout, [`EXIT_CANCELLED`] on cancellation).
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+///
+/// v1.0.1 split the previously 154-line implementation into three
+/// helpers — `spawn_subprocess`, `monitor_child`, `drain_readers` —
+/// plus this short orchestrator.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_command(
     job_name: &str,
     cmd: &str,
@@ -108,19 +125,59 @@ pub async fn run_command(
     cancel: Option<&Cancel>,
     tx: &mpsc::Sender<OutputEvent>,
 ) -> Result<i32, RunError> {
-    let _ = tx
+    run_command_inner(CommandSpec {
+        job_name,
+        cmd,
+        cwd,
+        env,
+        extra_env,
+        timeout,
+        cancel,
+        tx,
+    })
+    .await
+}
+
+async fn run_command_inner(spec: CommandSpec<'_>) -> Result<i32, RunError> {
+    let _ = spec
+        .tx
         .send(OutputEvent::JobStarted {
-            job: job_name.to_owned(),
-            cmd: cmd.to_owned(),
+            job: spec.job_name.to_owned(),
+            cmd: spec.cmd.to_owned(),
         })
         .await;
-
     let start = Instant::now();
+
+    let mut child = spawn_subprocess(&spec)?;
+    let pid = child.id();
+    let stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
+    let stdout_task = spawn_reader(stdout, Stream::Stdout, spec.job_name, spec.tx);
+    let stderr_task = spawn_reader(stderr, Stream::Stderr, spec.job_name, spec.tx);
+
+    let outcome = wait_for_outcome(&mut child, spec.timeout, spec.cancel).await;
+    let (exit, aborted) = resolve_exit(&mut child, outcome, spec.cmd, pid).await?;
+
+    drain_readers(stdout_task, stderr_task, aborted).await;
+
+    let _ = spec
+        .tx
+        .send(OutputEvent::JobFinished {
+            job: spec.job_name.to_owned(),
+            exit,
+            duration: start.elapsed(),
+        })
+        .await;
+    Ok(exit)
+}
+
+#[allow(clippy::result_large_err)]
+fn spawn_subprocess(spec: &CommandSpec<'_>) -> Result<tokio::process::Child, RunError> {
     let mut command = Command::new("sh");
     command
         .arg("-c")
-        .arg(cmd)
-        .current_dir(cwd)
+        .arg(spec.cmd)
+        .current_dir(spec.cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -129,52 +186,45 @@ pub async fn run_command(
         // `set.abort_all()`), the child process gets SIGKILL on drop
         // instead of outliving its parent.
         .kill_on_drop(true);
-    for (k, v) in env {
+    for (k, v) in spec.env {
         command.env(k, v);
     }
-    for (k, v) in extra_env {
+    for (k, v) in spec.extra_env {
         command.env(k, v);
     }
-
-    let mut child = command.spawn().map_err(|source| RunError::Spawn {
-        cmd: cmd.to_owned(),
+    command.spawn().map_err(|source| RunError::Spawn {
+        cmd: spec.cmd.to_owned(),
         source,
-    })?;
-    let pid = child.id();
+    })
+}
 
-    let stdout = child.stdout.take().expect("stdout piped");
-    let stderr = child.stderr.take().expect("stderr piped");
-
-    let job_s = job_name.to_owned();
-    let tx_s = tx.clone();
-    let stdout_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stdout).lines();
+fn spawn_reader(
+    pipe: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    stream: Stream,
+    job_name: &str,
+    tx: &mpsc::Sender<OutputEvent>,
+) -> tokio::task::JoinHandle<()> {
+    let job = job_name.to_owned();
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(pipe).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_s
+            let _ = tx
                 .send(OutputEvent::Line {
-                    job: job_s.clone(),
-                    stream: Stream::Stdout,
+                    job: job.clone(),
+                    stream,
                     line,
                 })
                 .await;
         }
-    });
+    })
+}
 
-    let job_e = job_name.to_owned();
-    let tx_e = tx.clone();
-    let stderr_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_e
-                .send(OutputEvent::Line {
-                    job: job_e.clone(),
-                    stream: Stream::Stderr,
-                    line,
-                })
-                .await;
-        }
-    });
-
+async fn wait_for_outcome(
+    child: &mut tokio::process::Child,
+    timeout: Option<Duration>,
+    cancel: Option<&Cancel>,
+) -> Outcome {
     let cancel_fut = async {
         if let Some(c) = cancel {
             c.cancelled().await;
@@ -182,33 +232,37 @@ pub async fn run_command(
             std::future::pending::<()>().await;
         }
     };
-
-    let outcome = {
-        let wait_fut = child.wait();
-        tokio::pin!(wait_fut);
-        tokio::pin!(cancel_fut);
-        match timeout {
-            None => tokio::select! {
-                biased;
-                () = &mut cancel_fut => Outcome::Cancelled,
-                res = &mut wait_fut => match res {
-                    Ok(status) => Outcome::Finished(status.code().unwrap_or(-1)),
-                    Err(e) => Outcome::WaitErr(e),
-                },
+    let wait_fut = child.wait();
+    tokio::pin!(wait_fut);
+    tokio::pin!(cancel_fut);
+    match timeout {
+        None => tokio::select! {
+            biased;
+            () = &mut cancel_fut => Outcome::Cancelled,
+            res = &mut wait_fut => match res {
+                Ok(status) => Outcome::Finished(status.code().unwrap_or(-1)),
+                Err(e) => Outcome::WaitErr(e),
             },
-            Some(t) => tokio::select! {
-                biased;
-                () = &mut cancel_fut => Outcome::Cancelled,
-                () = tokio::time::sleep(t) => Outcome::TimedOut,
-                res = &mut wait_fut => match res {
-                    Ok(status) => Outcome::Finished(status.code().unwrap_or(-1)),
-                    Err(e) => Outcome::WaitErr(e),
-                },
+        },
+        Some(t) => tokio::select! {
+            biased;
+            () = &mut cancel_fut => Outcome::Cancelled,
+            () = tokio::time::sleep(t) => Outcome::TimedOut,
+            res = &mut wait_fut => match res {
+                Ok(status) => Outcome::Finished(status.code().unwrap_or(-1)),
+                Err(e) => Outcome::WaitErr(e),
             },
-        }
-    };
+        },
+    }
+}
 
-    let (exit, aborted) = match outcome {
+async fn resolve_exit(
+    child: &mut tokio::process::Child,
+    outcome: Outcome,
+    cmd: &str,
+    pid: Option<u32>,
+) -> Result<(i32, bool), RunError> {
+    Ok(match outcome {
         Outcome::Finished(code) => (code, false),
         Outcome::Cancelled => {
             let _ = child.start_kill();
@@ -227,27 +281,23 @@ pub async fn run_command(
                 source,
             });
         }
-    };
+    })
+}
 
-    // On a clean exit, drain the line readers — they'll return
-    // naturally when the child's pipes close. On cancel/timeout, the
-    // child may have spawned descendants (think `sh -c 'sleep 5'`)
-    // that are now orphans still holding the pipe fds, so an
-    // unbounded await would hang until they die. Abort the reader
-    // tasks explicitly instead.
+/// On a clean exit, drain the line readers — they'll return naturally
+/// when the child's pipes close. On cancel/timeout, the child may have
+/// spawned descendants (think `sh -c 'sleep 5'`) that are now orphans
+/// still holding the pipe fds, so an unbounded await would hang until
+/// they die. Abort the reader tasks explicitly instead.
+async fn drain_readers(
+    stdout_task: tokio::task::JoinHandle<()>,
+    stderr_task: tokio::task::JoinHandle<()>,
+    aborted: bool,
+) {
     if aborted {
         stdout_task.abort();
         stderr_task.abort();
     }
     let _ = stdout_task.await;
     let _ = stderr_task.await;
-
-    let _ = tx
-        .send(OutputEvent::JobFinished {
-            job: job_name.to_owned(),
-            exit,
-            duration: start.elapsed(),
-        })
-        .await;
-    Ok(exit)
 }
