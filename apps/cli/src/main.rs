@@ -21,6 +21,9 @@ enum Command {
     Install(commands::install::Args),
     /// Remove hook wrappers that were installed by betterhook.
     Uninstall(commands::uninstall::Args),
+    /// Internal: invoked by the installed wrapper script. Not for direct use.
+    #[command(name = "__dispatch", hide = true)]
+    Dispatch(commands::dispatch::Args),
 }
 
 #[tokio::main]
@@ -30,5 +33,6 @@ async fn main() -> miette::Result<()> {
         Command::Init(args) => commands::init::run(&args),
         Command::Install(args) => commands::install::run(args).await,
         Command::Uninstall(args) => commands::uninstall::run(args).await,
+        Command::Dispatch(args) => commands::dispatch::run(args).await,
     }
 }
