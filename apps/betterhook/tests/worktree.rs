@@ -23,11 +23,7 @@ fn git(cwd: &Path, args: &[&str]) {
         .env("GIT_COMMITTER_EMAIL", "t@t.t")
         .status()
         .unwrap();
-    assert!(
-        status.success(),
-        "git {args:?} failed in {}",
-        cwd.display()
-    );
+    assert!(status.success(), "git {args:?} failed in {}", cwd.display());
 }
 
 /// Create a primary repo with `n` additional linked worktrees.
@@ -143,12 +139,15 @@ async fn each_worktree_dispatches_to_its_own_config() {
             let names: Vec<&str> = hook.jobs.iter().map(|j| j.name.as_str()).collect();
             assert_eq!(names, vec!["primary-only"]);
         }
-        other => panic!("primary should Run, got {other:?}", other = match other {
-            Dispatch::NoConfig => "NoConfig",
-            Dispatch::HookNotConfigured => "HookNotConfigured",
-            Dispatch::NoJobs => "NoJobs",
-            Dispatch::Run { .. } => unreachable!(),
-        }),
+        other => panic!(
+            "primary should Run, got {other:?}",
+            other = match other {
+                Dispatch::NoConfig => "NoConfig",
+                Dispatch::HookNotConfigured => "HookNotConfigured",
+                Dispatch::NoJobs => "NoJobs",
+                Dispatch::Run { .. } => unreachable!(),
+            }
+        ),
     }
 
     match wt0_dispatch {

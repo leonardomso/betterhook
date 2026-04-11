@@ -5,10 +5,12 @@
 //! in the sibling `apps/cli` crate and depends on this one.
 
 pub mod config;
+pub mod daemon;
 pub mod dispatch;
 pub mod error;
 pub mod git;
 pub mod install;
+pub mod lock;
 pub mod runner;
 pub mod status;
 
