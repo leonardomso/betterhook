@@ -12,10 +12,6 @@ description = "Memory-efficient, worktree-native git hooks manager built for the
 name = "betterhook"
 path = "src/lib.rs"
 
-[[bin]]
-name = "betterhookd"
-path = "src/bin/betterhookd.rs"
-
 [dependencies]
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -33,10 +29,8 @@ owo-colors = { workspace = true }
 humantime-serde = { workspace = true }
 tokio-util = { workspace = true }
 bincode = { workspace = true }
-clap = { workspace = true }
 futures = "0.3"
 bytes = "1"
-tracing-subscriber = { workspace = true }
 fs4 = { workspace = true }
 
 [dev-dependencies]

@@ -35,6 +35,9 @@ enum Command {
     /// Internal: invoked by the installed wrapper script. Not for direct use.
     #[command(name = "__dispatch", hide = true)]
     Dispatch(commands::dispatch::Args),
+    /// Internal: run the coordinator daemon. Spawned by the lock client.
+    #[command(hide = true)]
+    Serve(commands::serve::Args),
 }
 
 #[tokio::main]
@@ -50,5 +53,6 @@ async fn main() -> miette::Result<()> {
         Command::Fix(args) => commands::fix::run(args).await,
         Command::Migrate(args) => commands::migrate::run(&args),
         Command::Dispatch(args) => commands::dispatch::run(args).await,
+        Command::Serve(args) => commands::serve::run(args).await,
     }
 }

@@ -5,5 +5,6 @@ pub mod init;
 pub mod install;
 pub mod migrate;
 pub mod run;
+pub mod serve;
 pub mod status;
 pub mod uninstall;
