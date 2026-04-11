@@ -1,0 +1,70 @@
+---
+title: "Capability DAG"
+description: "Why betterhook replaces priority lists with a real read/write dependency graph."
+icon: "git-merge"
+---
+
+Most hooks managers parallelize jobs by hand-tuned `priority` lists.
+Betterhook v1 ships a real DAG instead. Every job declares what it
+**reads**, what it **writes**, whether it touches the **network**, and
+whether it's **concurrent_safe**. The runner builds a graph from those
+declarations and runs every root in parallel — only the pairs that
+actually conflict are serialized.
+
+## Declaring capabilities
+
+```toml
+[hooks.pre-commit.jobs.lint]
+run = "eslint --cache {staged_files}"
+glob = ["*.ts", "*.tsx"]
+reads = ["**/*.ts", "**/*.tsx"]
+writes = []
+network = false
+concurrent_safe = true
+
+[hooks.pre-commit.jobs.fmt]
+run = "prettier --write {staged_files}"
+reads = ["**/*.ts", "**/*.tsx"]
+writes = ["**/*.ts", "**/*.tsx"]
+concurrent_safe = false
+```
+
+## Edge rules
+
+The resolver in `runner::dag` adds an edge `A → B` when:
+
+- `A.writes` overlaps `B.reads` *(read-after-write)*
+- `A.writes` overlaps `B.writes` *(write-after-write)*
+- both `A.network` and `B.network` are true and at least one isn't
+  `concurrent_safe`
+
+The graph is acyclic by construction — when two jobs form a cycle,
+the resolver picks the parent based on the user's `priority = [...]`
+ordering at the hook level.
+
+## What it gets you
+
+- **Safer parallelism by default.** Two formatters that touch the
+  same files are serialized without you adding a `priority` list.
+- **More parallelism.** A `cargo clippy` and a `prettier` job no
+  longer block each other when they declare disjoint reads.
+- **A drop-in cache.** Because every `concurrent_safe` job is hashed
+  on its inputs, the cache only fires for jobs the DAG already
+  considers safe to replay.
+
+## Inspecting the graph
+
+`betterhook status` includes a per-hook `dag` summary:
+
+```bash
+$ betterhook status | jq '.config.hooks[0].dag'
+{
+  "node_count": 4,
+  "edge_count": 2,
+  "roots": ["lint", "test"],
+  "edges": [["fmt", "lint"], ["build", "test"]]
+}
+```
+
+`betterhook explain --hook pre-commit` prints a graphviz `digraph`
+section so you can paste it straight into a `.dot` viewer.

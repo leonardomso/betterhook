@@ -58,7 +58,8 @@
               "essentials/templates",
               "essentials/isolation",
               "essentials/extends",
-              "essentials/formats"
+              "essentials/formats",
+              "essentials/monorepo"
             ]
           },
           {
@@ -72,6 +73,9 @@
               "commands/status",
               "commands/explain",
               "commands/fix",
+              "commands/cache",
+              "commands/builtins",
+              "commands/doctor",
               "commands/migrate"
             ]
           },
@@ -90,7 +94,10 @@
               "architecture/overview",
               "architecture/worktree-model",
               "architecture/runner",
-              "architecture/daemon"
+              "architecture/daemon",
+              "architecture/capability-dag",
+              "architecture/cache",
+              "architecture/speculative"
             ]
           },
           {

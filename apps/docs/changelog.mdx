@@ -7,6 +7,54 @@ icon: "history"
 All notable changes follow [Keep a Changelog](https://keepachangelog.com)
 and this project adheres to [semantic versioning](https://semver.org).
 
+## v1.0.0 — 2026-04-11
+
+The launch release. Adds the capability DAG scheduler, the
+content-addressable hook cache, on-save speculative execution,
+monorepo `[packages.<name>]` blocks with path filters, KDL alongside
+TOML / YAML / JSON, persistent per-repo daemons via launchd / systemd,
+twelve builtin linter wrappers with structured JSON diagnostics, and
+the `betterhook doctor` health check. Single binary — `betterhookd`
+is gone in favor of a hidden `betterhook serve` subcommand.
+
+### Added
+
+<AccordionGroup>
+  <Accordion title="Capability DAG" icon="git-merge">
+    - Schema gains `reads`, `writes`, `network`, `concurrent_safe` per job
+    - Resolver builds a real DAG, runs every root in parallel, serializes only conflicting pairs
+    - `priority = [...]` becomes a tiebreaker, not the only ordering signal
+    - `betterhook status` and `betterhook explain` surface the resolved graph
+  </Accordion>
+  <Accordion title="Content-addressable cache" icon="database">
+    - Keyed on `blake3(content) + blake3(tool_binary) + blake3(args)`
+    - Tool binary hashing follows mise / nvm shims so upgrades naturally invalidate
+    - Per-input mtime freshness gate so a stale prewarm never silently passes
+    - `betterhook cache stats | clear | verify` for agent introspection
+  </Accordion>
+  <Accordion title="Speculative execution" icon="zap">
+    - `notify`-backed file watcher with graceful degradation on NFS / sandboxed containers
+    - Daemon prewarms `concurrent_safe` jobs on save, results land in the CA cache
+    - Commit-time runner just hits the cache — golden path is zero subprocesses
+  </Accordion>
+  <Accordion title="Monorepo packages" icon="boxes">
+    - `[packages.<name>]` config blocks with `path` filters
+    - Per-package hook inheritance with override and skip semantics
+    - Packages run in parallel; git-index writes serialized via shared mutex
+  </Accordion>
+  <Accordion title="Builtins + doctor + import" icon="package">
+    - 12 builtins: rustfmt, clippy, prettier, eslint, ruff, black, gofmt, govet, biome, oxlint, shellcheck, gitleaks
+    - Each with structured JSON diagnostics on the same NDJSON stream
+    - `betterhook doctor` walks 7 health checks, exits non-zero on fail
+    - `betterhook import --from <husky|lefthook|hk|pre-commit>` replaces the v0 `migrate` command
+  </Accordion>
+</AccordionGroup>
+
+### Changed
+
+- `betterhook migrate` is now a hidden alias for `betterhook import --from-format lefthook`
+- `betterhookd` is no longer a separate binary — `betterhook serve` is the new entry point
+
 ## v0.0.1 — 2026-04-11
 
 Initial scaffolding release. Built across 20 phases in the project plan

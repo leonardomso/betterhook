@@ -1,0 +1,51 @@
+---
+title: "Content-addressable cache"
+description: "How betterhook turns a clean re-commit into a sub-100 ms cache replay."
+icon: "database"
+---
+
+The CA cache is where the v1 "faster than hk" claim is earned. Every
+`concurrent_safe` job is keyed on `blake3(file_content) +
+blake3(tool_binary) + blake3(args)` and the result — exit code,
+captured `OutputEvent` stream, and per-input mtime snapshot — is
+written under `<git-common-dir>/betterhook/cache/`.
+
+## Lookup path
+
+1. The runner derives the cache key for `(job, files)` via
+   `cache::derive_key`.
+2. If the entry exists and every tracked input's mtime still matches
+   the snapshot taken at write time, it's a hit. The runner emits a
+   `JobCacheHit` event, replays the cached `OutputEvent`s through the
+   multiplexer, and skips the subprocess entirely.
+3. On a miss, the job runs normally; events are tee'd into the cache
+   on a clean exit.
+
+## Tool binary resolution
+
+Tool binaries are resolved via `which` and, when applicable, followed
+through mise/nvm shims to the concrete file. The hash includes the
+canonical path's contents, so a `mise install rust@nightly` upgrade
+naturally invalidates the cache without any manual `cache clear`.
+
+## CLI
+
+```bash
+betterhook cache stats     # entries, total bytes, oldest/newest mtime
+betterhook cache verify    # report any corrupt or undecodable entries
+betterhook cache clear     # wipe the store
+```
+
+All output is JSON for agent consumption.
+
+## Freshness gate
+
+Cache entries store the mtime of every input file at write time.
+On lookup, betterhook compares each current mtime to the snapshot at
+second precision; any divergence is a miss. Combined with the
+content-hash key, this guarantees:
+
+- a stale prewarm never silently passes a freshly-edited file
+- two identical commits in a row always hit (the mtimes match)
+- a `touch` without an edit invalidates (the user pressed save for a
+  reason)

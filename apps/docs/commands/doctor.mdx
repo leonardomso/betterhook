@@ -1,0 +1,47 @@
+---
+title: "betterhook doctor"
+description: "Pre-flight health check for the install, config, cache, and watcher."
+icon: "stethoscope"
+---
+
+`betterhook doctor` walks a matrix of checks every betterhook install
+should pass and emits a JSON report. Exit code is non-zero on any
+fail, so it's safe to drop into CI as a gate.
+
+```bash
+$ betterhook doctor | jq '.checks[]'
+{ "name": "installed",       "status": "pass", "detail": "..." }
+{ "name": "config",          "status": "pass", "detail": "..." }
+{ "name": "builtin_tools",   "status": "pass", "detail": "..." }
+{ "name": "cache_writable",  "status": "pass", "detail": "..." }
+{ "name": "watcher",         "status": "pass", "detail": "..." }
+{ "name": "orphan_stashes",  "status": "pass", "detail": "..." }
+{ "name": "core_hookspath",  "status": "pass", "detail": "..." }
+```
+
+## Status levels
+
+- `pass` — the check is healthy.
+- `warn` — degraded but not broken (e.g. the daemon hasn't started
+  yet, a builtin tool isn't on PATH).
+- `fail` — blocking. The CLI exits non-zero.
+
+## What's covered
+
+| Check | What it verifies |
+|---|---|
+| `installed` | `installed.json` exists and every wrapper SHA matches the manifest |
+| `config` | `betterhook.{toml,yaml,kdl,json}` parses cleanly via the same path the runner uses |
+| `builtin_tools` | every registered builtin's tool binary resolves on `PATH` |
+| `cache_writable` | the CA cache directory is writable; round-trips a tempfile |
+| `watcher` | reads `speculative-stats.json`; warns when the watcher is disabled or absent |
+| `orphan_stashes` | scans `git stash list` for leftover `betterhook` stashes |
+| `core_hookspath` | warns when `core.hooksPath` is set to anything other than `<common>/hooks` |
+
+## CI usage
+
+```bash
+betterhook doctor || exit 1
+```
+
+Always returns 0 unless something is genuinely broken.
