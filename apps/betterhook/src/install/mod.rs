@@ -138,8 +138,7 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
     let common_dir = crate::git::git_common_dir(&worktree).await?;
 
     // Honor a pre-existing core.hooksPath — either take over or refuse.
-    let existing_hp = get_core_hooks_path(&worktree).await?;
-    if let Some(existing) = existing_hp {
+    if let Some(existing) = get_core_hooks_path(&worktree).await? {
         if opts.takeover {
             unset_core_hooks_path(&worktree).await?;
         } else {
@@ -158,52 +157,9 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
         .clone()
         .unwrap_or_else(|| config.hooks.keys().cloned().collect());
 
-    let wrapper = render_wrapper(&bin_str);
-    let wrapper_sha = sha256_hex(wrapper.as_bytes());
+    let (installed_shas, installed_order) = write_wrappers(&hooks_dir, &bin_str, &hook_types)?;
 
-    let mut installed_shas: BTreeMap<String, String> = BTreeMap::new();
-    let mut installed_order: Vec<String> = Vec::new();
-    for hook_name in &hook_types {
-        let target = hooks_dir.join(hook_name);
-        write_executable(&target, &wrapper)?;
-        installed_shas.insert(hook_name.clone(), wrapper_sha.clone());
-        installed_order.push(hook_name.clone());
-    }
-
-    let manifest_dir = common_dir.join("betterhook");
-    ensure_dir(&manifest_dir)?;
-
-    // Install the persistent unit file so the coordinator daemon
-    // survives reboots. Best-effort — if the platform is unsupported
-    // or the user opted out via `--no-unit`, the manifest's
-    // `unit_path` stays None and the on-demand spawn path from the
-    // lock client continues to work as in v0.0.1.
-    let socket_path = manifest_dir.join("sock");
-    let unit = if opts.skip_unit {
-        None
-    } else {
-        crate::daemon::lifecycle::install_unit(
-            &common_dir,
-            &bin,
-            &socket_path,
-            opts.unit_dir_override.as_deref(),
-        )
-        .map_err(|source| InstallError::Io {
-            path: socket_path.clone(),
-            source,
-        })?
-    };
-
-    let manifest_path = manifest_dir.join(MANIFEST_FILENAME);
-    let manifest = InstalledManifest {
-        wrapper_version: WRAPPER_VERSION,
-        betterhook_version: crate::VERSION.to_string(),
-        betterhook_bin: bin_str,
-        hooks: installed_shas,
-        previous_core_hooks_path: None,
-        unit_path: unit.as_ref().map(|u| u.path.clone()),
-    };
-    write_manifest(&manifest_path, &manifest)?;
+    let (manifest_path, unit) = write_installation_metadata(&common_dir, &bin, &bin_str, &opts, installed_shas)?;
 
     Ok(InstallReport {
         common_dir,
@@ -212,6 +168,68 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
         manifest_path,
         unit,
     })
+}
+
+/// Stamp a wrapper into every hook type declared in the config. The
+/// wrapper is byte-identical across hook types — what differs is the
+/// filename git uses to resolve it.
+fn write_wrappers(
+    hooks_dir: &Path,
+    bin_str: &str,
+    hook_types: &[String],
+) -> InstallResult<(BTreeMap<String, String>, Vec<String>)> {
+    let wrapper = render_wrapper(bin_str);
+    let wrapper_sha = sha256_hex(wrapper.as_bytes());
+    let mut installed_shas: BTreeMap<String, String> = BTreeMap::new();
+    let mut installed_order: Vec<String> = Vec::new();
+    for hook_name in hook_types {
+        let target = hooks_dir.join(hook_name);
+        write_executable(&target, &wrapper)?;
+        installed_shas.insert(hook_name.clone(), wrapper_sha.clone());
+        installed_order.push(hook_name.clone());
+    }
+    Ok((installed_shas, installed_order))
+}
+
+/// Write the installed manifest and (on supported platforms) the
+/// launchd/systemd unit file. Best-effort for the unit file: an
+/// unsupported platform or `skip_unit = true` leaves the manifest's
+/// `unit_path` as `None` and the on-demand spawn path keeps working.
+fn write_installation_metadata(
+    common_dir: &Path,
+    bin: &Path,
+    bin_str: &str,
+    opts: &InstallOptions,
+    installed_shas: BTreeMap<String, String>,
+) -> InstallResult<(PathBuf, Option<crate::daemon::lifecycle::InstalledUnit>)> {
+    let manifest_dir = common_dir.join("betterhook");
+    ensure_dir(&manifest_dir)?;
+    let socket_path = manifest_dir.join("sock");
+    let unit = if opts.skip_unit {
+        None
+    } else {
+        crate::daemon::lifecycle::install_unit(
+            common_dir,
+            bin,
+            &socket_path,
+            opts.unit_dir_override.as_deref(),
+        )
+        .map_err(|source| InstallError::Io {
+            path: socket_path.clone(),
+            source,
+        })?
+    };
+    let manifest_path = manifest_dir.join(MANIFEST_FILENAME);
+    let manifest = InstalledManifest {
+        wrapper_version: WRAPPER_VERSION,
+        betterhook_version: crate::VERSION.to_string(),
+        betterhook_bin: bin_str.to_owned(),
+        hooks: installed_shas,
+        previous_core_hooks_path: None,
+        unit_path: unit.as_ref().map(|u| u.path.clone()),
+    };
+    write_manifest(&manifest_path, &manifest)?;
+    Ok((manifest_path, unit))
 }
 
 /// Remove only wrappers whose SHA-256 matches what we wrote. User-edited
