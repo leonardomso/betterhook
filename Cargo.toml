@@ -30,6 +30,7 @@ humantime = "2.3"
 humantime-serde = "1.1"
 sha2 = "0.11"
 blake3 = { version = "1.8", features = ["mmap"] }
+which = "8"
 semver = { version = "1.0.28", features = ["serde"] }
 bincode = { version = "2.0", features = ["serde"] }
 fs4 = "0.13"

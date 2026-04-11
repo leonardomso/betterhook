@@ -12,6 +12,7 @@ use crate::config::Job;
 
 use super::hash::{ArgsHash, CacheKey, ContentHash, ToolHash, args_hash, hash_bytes, hash_file};
 use super::store::{CachedResult, Store, StoreError, StoreResult};
+use super::tool_hash::resolve_tool_hash;
 
 /// Combined blake3 hash of every file in `files`, sorted by path.
 ///
@@ -34,13 +35,10 @@ pub fn hash_file_set(files: &[PathBuf]) -> io::Result<ContentHash> {
     Ok(ContentHash(hasher.finalize().to_hex().to_string()))
 }
 
-/// Placeholder tool-binary hash. Phase 31 replaces this with a
-/// `which`-based lookup that follows mise/nvm shims to the concrete
-/// binary and hashes the mmap.
-///
-/// For phase 29+30 we hash the `run` string itself — changing the
-/// command invalidates the cache, which is correct but coarser than
-/// "binary upgrade invalidates".
+/// Phase 29's placeholder tool-binary hash, kept as a fallback for
+/// environments where `which`-based resolution doesn't work (CI
+/// sandboxes, containers with stripped PATH, etc.). Hashes the run
+/// string directly.
 #[must_use]
 pub fn tool_hash_proxy(run: &str) -> ToolHash {
     ToolHash(hash_bytes(run.as_bytes()))
@@ -68,11 +66,13 @@ pub fn args_hash_from_job(job: &Job) -> ArgsHash {
     args_hash(&components)
 }
 
-/// Derive the full `CacheKey` for a `(job, files)` pair.
+/// Derive the full `CacheKey` for a `(job, files)` pair. Uses the
+/// phase-31 real tool resolver (mise/nvm-aware) and falls back to
+/// hashing the run string if binary resolution fails.
 pub fn derive_key(job: &Job, files: &[PathBuf]) -> io::Result<CacheKey> {
     Ok(CacheKey {
         content: hash_file_set(files)?,
-        tool: tool_hash_proxy(&job.run),
+        tool: resolve_tool_hash(&job.run),
         args: args_hash_from_job(job),
     })
 }
