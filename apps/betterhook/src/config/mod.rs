@@ -14,7 +14,7 @@ use std::path::Path;
 
 pub use extends::resolve;
 pub use parse::{Format, parse_bytes, parse_file};
-pub use schema::{Config, Hook, IsolateSpec, Job, Meta, RawConfig, ToolPathScope};
+pub use schema::{Config, Hook, IsolateSpec, Job, Meta, Package, RawConfig, ToolPathScope};
 
 use crate::error::ConfigResult;
 

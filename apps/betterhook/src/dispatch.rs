@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::{self, Config, Hook};
+use crate::config::{self, Config, Hook, Package};
 use crate::error::ConfigResult;
 
 /// Candidate config filenames, in lookup order. First match wins.
@@ -76,16 +76,103 @@ pub fn resolve(worktree: &Path, hook_name: &str) -> ConfigResult<Dispatch> {
         return Ok(Dispatch::NoConfig);
     };
     let config = config::load(&config_path)?;
-    let Some(hook) = config.hooks.get(hook_name) else {
+    let has_root_hook = config
+        .hooks
+        .get(hook_name)
+        .is_some_and(|h| !h.jobs.is_empty());
+    let has_package_hook = config
+        .packages
+        .values()
+        .any(|p| p.hooks.get(hook_name).is_some_and(|h| !h.jobs.is_empty()));
+    if !has_root_hook && !has_package_hook {
+        let has_empty_hook = config.hooks.contains_key(hook_name)
+            || config
+                .packages
+                .values()
+                .any(|p| p.hooks.contains_key(hook_name));
+        if has_empty_hook {
+            return Ok(Dispatch::NoJobs);
+        }
         return Ok(Dispatch::HookNotConfigured);
-    };
-    if hook.jobs.is_empty() {
-        return Ok(Dispatch::NoJobs);
     }
     Ok(Dispatch::Run {
         config,
         hook_name: hook_name.to_owned(),
     })
+}
+
+/// Monorepo dispatch: group `staged_files` by the longest matching
+/// package path prefix. `PackageMatch::Root` is the residual bucket
+/// of files that didn't match any declared package.
+#[derive(Debug, Clone)]
+pub enum PackageMatch<'a> {
+    Root(Vec<PathBuf>),
+    Package(&'a Package, Vec<PathBuf>),
+}
+
+#[must_use]
+pub fn resolve_packages<'a>(
+    config: &'a Config,
+    staged_files: &[PathBuf],
+) -> Vec<PackageMatch<'a>> {
+    if config.packages.is_empty() {
+        return vec![PackageMatch::Root(staged_files.to_vec())];
+    }
+
+    // Longest-prefix-wins: sort package paths by length descending.
+    let mut packages: Vec<&Package> = config.packages.values().collect();
+    packages.sort_by_key(|p| std::cmp::Reverse(p.path.as_os_str().len()));
+
+    let mut buckets: std::collections::BTreeMap<String, Vec<PathBuf>> =
+        std::collections::BTreeMap::new();
+    let mut root_bucket: Vec<PathBuf> = Vec::new();
+
+    for file in staged_files {
+        let mut matched = false;
+        for pkg in &packages {
+            if file.starts_with(&pkg.path) {
+                buckets
+                    .entry(pkg.name.clone())
+                    .or_default()
+                    .push(file.clone());
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            root_bucket.push(file.clone());
+        }
+    }
+
+    let mut out: Vec<PackageMatch<'a>> = Vec::new();
+    if !root_bucket.is_empty() {
+        out.push(PackageMatch::Root(root_bucket));
+    }
+    for pkg in config.packages.values() {
+        if let Some(files) = buckets.get(&pkg.name) {
+            out.push(PackageMatch::Package(pkg, files.clone()));
+        }
+    }
+    out
+}
+
+/// Pick the right hook for a [`PackageMatch`] on a given name.
+/// Package-level hooks win; otherwise fall back to the root hook.
+/// Phase 35 layers per-job overrides on top of the root instead of
+/// picking one or the other wholesale.
+#[must_use]
+pub fn hook_for_match<'a>(
+    config: &'a Config,
+    m: &PackageMatch<'a>,
+    hook_name: &str,
+) -> Option<&'a Hook> {
+    match m {
+        PackageMatch::Root(_) => config.hooks.get(hook_name),
+        PackageMatch::Package(pkg, _) => pkg
+            .hooks
+            .get(hook_name)
+            .or_else(|| config.hooks.get(hook_name)),
+    }
 }
 
 #[cfg(test)]
