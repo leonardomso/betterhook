@@ -15,6 +15,8 @@ path = "src/main.rs"
 [dependencies]
 betterhook = { path = "../betterhook" }
 clap = { workspace = true }
+tokio = { workspace = true }
+miette = { workspace = true }
 
 [lints]
 workspace = true
