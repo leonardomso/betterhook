@@ -303,6 +303,11 @@ async fn run_sequential(
 /// with a DAG walker that respects declared `reads`/`writes`/`network`
 /// capabilities. Jobs whose capability sets are disjoint run in
 /// parallel; jobs that conflict serialize in a priority-ordered way.
+// The scheduler loop is one cohesive state machine: ready heap,
+// join-set drain, DAG child release, fail-fast cascade. Splitting
+// further would spread mutable local state across functions and hurt
+// readability more than it helps. v1.0.1 brought it down from 243
+// lines to ~130 by extracting `execute_job_in_dag` and we stop there.
 #[allow(clippy::too_many_lines)]
 async fn run_parallel(
     ctx: &ExecutionContext<'_>,
@@ -410,99 +415,23 @@ async fn run_parallel(
                 }
             }
 
-            // Spawn the real job.
-            let tx_spawn = ctx.tx.clone();
-            let hook_name_spawn = hook_name.clone();
-            let git_lock_spawn = ctx.git_lock.clone();
-            let worktree_spawn = ctx.worktree.to_path_buf();
-            let common_dir_spawn = ctx.common_dir.to_path_buf();
-            let no_locks_spawn = ctx.no_locks;
-            let cancel_spawn = cancel.clone();
-            let plan_for_spawn = plan.clone();
+            // Spawn the real job as a named async fn. Naming the body
+            // improves stack traces, shortens the outer scheduler, and
+            // removes four levels of closure nesting.
+            let spawn_ctx = SpawnedJobContext {
+                job,
+                plan: plan.clone(),
+                tx: ctx.tx.clone(),
+                hook_name: hook_name.clone(),
+                git_lock: ctx.git_lock.clone(),
+                worktree: ctx.worktree.to_path_buf(),
+                common_dir: ctx.common_dir.to_path_buf(),
+                no_locks: ctx.no_locks,
+                cancel: cancel.clone(),
+            };
             running += 1;
             set.spawn(async move {
-                let result = async {
-                    let before_unstaged =
-                        snapshot_unstaged_if_needed(&job, &worktree_spawn).await?;
-                    let (_lock, lock_env) = acquire_if_isolated(
-                        &job,
-                        &common_dir_spawn,
-                        &worktree_spawn,
-                        no_locks_spawn,
-                        &tx_spawn,
-                    )
-                    .await;
-                    let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name_spawn)];
-                    extra_env.extend(lock_env);
-
-                    // Capture events as they fire so we can persist
-                    // them into the CA cache on success. The tee task
-                    // forwards each event to `tx_spawn` unchanged and
-                    // also pushes into a local Vec we drain later.
-                    let (local_tx, mut local_rx) = mpsc::channel::<OutputEvent>(256);
-                    let tx_forward = tx_spawn.clone();
-                    let tee = tokio::spawn(async move {
-                        let mut captured: Vec<OutputEvent> = Vec::new();
-                        while let Some(ev) = local_rx.recv().await {
-                            captured.push(ev.clone());
-                            let _ = tx_forward.send(ev).await;
-                        }
-                        captured
-                    });
-
-                    let mut job_failed = false;
-                    for cmd in &plan_for_spawn.commands {
-                        let exit = run_command(
-                            &job.name,
-                            cmd,
-                            &plan_for_spawn.cwd,
-                            &job.env,
-                            &extra_env,
-                            job.timeout,
-                            Some(&cancel_spawn),
-                            &local_tx,
-                        )
-                        .await?;
-                        if exit != 0 {
-                            job_failed = true;
-                            break;
-                        }
-                    }
-                    drop(local_tx);
-                    let captured = tee.await.unwrap_or_default();
-
-                    if let Some(before) = before_unstaged {
-                        let _g = git_lock_spawn.lock().await;
-                        apply_stage_fixed(&worktree_spawn, &before).await?;
-                    }
-
-                    // Cache the events on a clean run of a
-                    // concurrent_safe job. Best-effort: cache write
-                    // failures log but don't fail the hook.
-                    if job.concurrent_safe && !job_failed && !plan_for_spawn.files.is_empty() {
-                        let inputs = crate::cache::snapshot_inputs(&plan_for_spawn.files);
-                        let result = crate::cache::CachedResult {
-                            exit: 0,
-                            events: captured,
-                            created_at: std::time::SystemTime::now(),
-                            inputs,
-                        };
-                        if let Err(e) = crate::cache::store_result(
-                            &common_dir_spawn,
-                            &job,
-                            &plan_for_spawn.files,
-                            &result,
-                        ) {
-                            eprintln!(
-                                "betterhook: WARNING — cache write for '{}' failed: {e}",
-                                job.name
-                            );
-                        }
-                    }
-
-                    Ok::<_, RunError>(JobOutcome { failed: job_failed })
-                }
-                .await;
+                let result = execute_job_in_dag(spawn_ctx).await;
                 (idx, result)
             });
         }
@@ -576,6 +505,106 @@ fn pending_clone_ref(_: &[usize]) -> Vec<usize> {
 
 struct JobOutcome {
     failed: bool,
+}
+
+/// Owned context handed to [`execute_job_in_dag`] when the scheduler
+/// spawns a DAG node. Every field is owned because the closure runs
+/// on a detached tokio task and outlives the calling scheduler loop.
+struct SpawnedJobContext {
+    job: Job,
+    plan: JobPlan,
+    tx: mpsc::Sender<OutputEvent>,
+    hook_name: String,
+    git_lock: GitIndexLock,
+    worktree: PathBuf,
+    common_dir: PathBuf,
+    no_locks: bool,
+    cancel: Cancel,
+}
+
+/// Run a single DAG node to completion: acquire isolation lock, spawn
+/// the tee channel for cache capture, run every command, apply
+/// `stage_fixed`, and persist the cache entry on success.
+///
+/// Extracted from an inline `set.spawn(async move { ... })` closure in
+/// v1.0.1 — the closure was 85 lines, nested 4 levels deep, and made
+/// panic stack traces unreadable. Moving it to a named `async fn`
+/// doesn't change behavior but is hugely better for debugging.
+async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunError> {
+    let SpawnedJobContext {
+        job,
+        plan,
+        tx,
+        hook_name,
+        git_lock,
+        worktree,
+        common_dir,
+        no_locks,
+        cancel,
+    } = ctx;
+
+    let before_unstaged = snapshot_unstaged_if_needed(&job, &worktree).await?;
+    let (_lock, lock_env) =
+        acquire_if_isolated(&job, &common_dir, &worktree, no_locks, &tx).await;
+    let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name)];
+    extra_env.extend(lock_env);
+
+    // Capture events as they fire so we can persist them into the CA
+    // cache on success. The tee task forwards each event to `tx`
+    // unchanged and also pushes into a local Vec we drain later.
+    let (local_tx, mut local_rx) = mpsc::channel::<OutputEvent>(256);
+    let tx_forward = tx.clone();
+    let tee = tokio::spawn(async move {
+        let mut captured: Vec<OutputEvent> = Vec::new();
+        while let Some(ev) = local_rx.recv().await {
+            captured.push(ev.clone());
+            let _ = tx_forward.send(ev).await;
+        }
+        captured
+    });
+
+    let mut job_failed = false;
+    for cmd in &plan.commands {
+        let exit = run_command(
+            &job.name,
+            cmd,
+            &plan.cwd,
+            &job.env,
+            &extra_env,
+            job.timeout,
+            Some(&cancel),
+            &local_tx,
+        )
+        .await?;
+        if exit != 0 {
+            job_failed = true;
+            break;
+        }
+    }
+    drop(local_tx);
+    let captured = tee.await.unwrap_or_default();
+
+    if let Some(before) = before_unstaged {
+        let _g = git_lock.lock().await;
+        apply_stage_fixed(&worktree, &before).await?;
+    }
+
+    // Cache the events on a clean run of a concurrent_safe job.
+    // Best-effort: cache write failures log but don't fail the hook.
+    if job.concurrent_safe && !job_failed && !plan.files.is_empty() {
+        let inputs = crate::cache::snapshot_inputs(&plan.files);
+        let result = crate::cache::CachedResult {
+            exit: 0,
+            events: captured,
+            created_at: std::time::SystemTime::now(),
+            inputs,
+        };
+        if let Err(e) = crate::cache::store_result(&common_dir, &job, &plan.files, &result) {
+            eprintln!("betterhook: WARNING — cache write for '{}' failed: {e}", job.name);
+        }
+    }
+
+    Ok(JobOutcome { failed: job_failed })
 }
 
 /// If `job` declares an `isolate` spec, acquire the appropriate lock
