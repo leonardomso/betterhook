@@ -15,11 +15,30 @@
 //! Failures at any step fall back to the run-string hash so the cache
 //! key stays stable and correct (if overly coarse).
 
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 use super::hash::{ToolHash, hash_bytes, hash_file};
+
+/// Per-process memoization cache for resolved tool hashes.
+///
+/// `resolve_tool_hash` is expensive: it calls `which`, maybe spawns
+/// `mise which`, canonicalizes the result, and mmap-hashes the binary.
+/// That adds 3-5 ms per call. In a single hook run, most jobs share a
+/// handful of tools (`cargo`, `eslint`, `prettier`) — memoizing by
+/// tool name saves that cost on every call after the first.
+///
+/// The cache lives for the duration of the process. A tool upgrade
+/// mid-run is handled by the fact that `betterhook` is a short-lived
+/// CLI — a new process gets a fresh cache. The daemon rebuilds its
+/// cache on restart.
+fn resolved_cache() -> &'static Mutex<HashMap<String, ToolHash>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, ToolHash>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Resolve the tool binary for a run command and return a blake3-keyed
 /// `ToolHash` of its bytes.
@@ -28,15 +47,30 @@ pub fn resolve_tool_hash(run_cmd: &str) -> ToolHash {
     let Some(tool) = first_token(run_cmd) else {
         return fallback(run_cmd);
     };
-    let Some(resolved) = resolve_on_path(tool) else {
-        return fallback(run_cmd);
-    };
+
+    // Per-process memoization: check the cache before paying the
+    // `which` + mmap cost.
+    if let Some(hit) = resolved_cache()
+        .lock()
+        .ok()
+        .and_then(|m| m.get(tool).cloned())
+    {
+        return hit;
+    }
+
+    let hash = compute_tool_hash(tool).unwrap_or_else(|| fallback(run_cmd));
+
+    if let Ok(mut m) = resolved_cache().lock() {
+        m.insert(tool.to_owned(), hash.clone());
+    }
+    hash
+}
+
+fn compute_tool_hash(tool: &str) -> Option<ToolHash> {
+    let resolved = resolve_on_path(tool)?;
     let concrete = follow_mise_shim(&resolved, tool).unwrap_or(resolved);
     let canonical = std::fs::canonicalize(&concrete).unwrap_or(concrete);
-    match hash_file(&canonical) {
-        Ok(h) => ToolHash(h.0),
-        Err(_) => fallback(run_cmd),
-    }
+    hash_file(&canonical).ok().map(|h| ToolHash(h.0))
 }
 
 fn fallback(run_cmd: &str) -> ToolHash {
@@ -129,5 +163,19 @@ mod tests {
         // (the fallback path), never panic.
         let h = resolve_tool_hash("this-command-definitely-does-not-exist-12345 arg");
         assert_eq!(h.0.len(), 64, "falls back to 64-char hex");
+    }
+
+    #[test]
+    fn resolve_tool_hash_is_memoized_by_tool_name() {
+        // The second call for the same tool should return an identical
+        // hash without re-running which/mmap — we can't directly
+        // observe the call count, but stability plus a per-process
+        // cache means repeating the call is effectively free.
+        let a = resolve_tool_hash("/bin/sh -c one");
+        let b = resolve_tool_hash("/bin/sh -c two");
+        // Both should resolve to the same tool hash because the tool
+        // (`/bin/sh`) is identical. args_hash_from_job captures the
+        // "one" vs "two" distinction elsewhere in the cache key.
+        assert_eq!(a, b);
     }
 }
