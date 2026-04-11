@@ -5,59 +5,13 @@
 //! config at runtime. The property-under-test is exactly the thing
 //! lefthook fails at.
 
-use std::path::{Path, PathBuf};
-use std::process::Command as StdCommand;
+mod common;
 
 use betterhook::dispatch::{Dispatch, resolve};
 use betterhook::git::git_common_dir;
 use betterhook::install::{InstallOptions, install};
-use tempfile::TempDir;
 
-fn git(cwd: &Path, args: &[&str]) {
-    let status = StdCommand::new("git")
-        .current_dir(cwd)
-        .args(args)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.t")
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed in {}", cwd.display());
-}
-
-/// Create a primary repo with `n` additional linked worktrees.
-/// Returns `(tempdir_handle, primary_path, linked_paths)`.
-fn new_repo_with_worktrees(n: usize) -> (TempDir, PathBuf, Vec<PathBuf>) {
-    let dir = TempDir::new().unwrap();
-    let primary = dir.path().join("primary");
-    std::fs::create_dir_all(&primary).unwrap();
-    git(&primary, &["init", "-q", "-b", "main"]);
-    git(&primary, &["config", "user.email", "t@t.t"]);
-    git(&primary, &["config", "user.name", "t"]);
-    std::fs::write(primary.join("README.md"), "hi").unwrap();
-    git(&primary, &["add", "README.md"]);
-    git(&primary, &["commit", "-q", "-m", "init"]);
-
-    let linked: Vec<PathBuf> = (0..n)
-        .map(|i| {
-            let wt = dir.path().join(format!("wt-{i}"));
-            git(
-                &primary,
-                &[
-                    "worktree",
-                    "add",
-                    wt.to_str().unwrap(),
-                    "-b",
-                    &format!("feature-{i}"),
-                ],
-            );
-            wt
-        })
-        .collect();
-
-    (dir, primary, linked)
-}
+use common::new_repo_with_worktrees;
 
 #[tokio::test]
 async fn install_writes_one_wrapper_shared_across_worktrees() {

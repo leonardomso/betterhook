@@ -6,60 +6,18 @@
 //! They use real `git` subprocesses so failures show real-world
 //! interaction bugs the unit tests would never catch.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+mod common;
+
+use std::path::PathBuf;
 
 use betterhook::cache::{CachedResult, Store, lookup, snapshot_inputs, store_result};
 use betterhook::config::import::{self, ImportSource};
 use betterhook::config::{Hook, Job, load};
 use betterhook::dispatch::{Dispatch, find_config, resolve, resolve_packages};
 use betterhook::install::{InstallOptions, install};
-use betterhook::runner::{RunOptions, SinkKind, run_hook_with_options};
-use tempfile::TempDir;
+use betterhook::runner::run_hook_with_options;
 
-// ───────────────────────────── helpers ──────────────────────────────
-
-fn git(cwd: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .current_dir(cwd)
-        .args(args)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.t")
-        .output()
-        .unwrap();
-    assert!(
-        status.status.success(),
-        "git {args:?} failed in {}: {}",
-        cwd.display(),
-        String::from_utf8_lossy(&status.stderr)
-    );
-}
-
-fn init_repo() -> (TempDir, PathBuf) {
-    let dir = TempDir::new().unwrap();
-    let repo = dir.path().join("repo");
-    std::fs::create_dir_all(&repo).unwrap();
-    git(&repo, &["init", "-q", "-b", "main"]);
-    git(&repo, &["config", "user.email", "t@t.t"]);
-    git(&repo, &["config", "user.name", "t"]);
-    std::fs::write(repo.join("README.md"), "hi").unwrap();
-    git(&repo, &["add", "README.md"]);
-    git(&repo, &["commit", "-q", "-m", "init"]);
-    (dir, repo)
-}
-
-fn write_config(repo: &Path, body: &str) {
-    std::fs::write(repo.join("betterhook.toml"), body).unwrap();
-}
-
-fn run_options_quiet() -> RunOptions {
-    RunOptions {
-        sink: SinkKind::Json,
-        ..Default::default()
-    }
-}
+use common::{git, init_repo, run_options_quiet, write_config};
 
 // ─────────────────────── DAG end-to-end execution ────────────────────
 
