@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 
 use crate::runner::output::DiagnosticSeverity;
 
+pub mod black;
 pub mod clippy;
 pub mod eslint;
 pub mod prettier;
@@ -75,6 +76,7 @@ pub fn registry() -> BTreeMap<&'static str, BuiltinMeta> {
         prettier::meta(),
         eslint::meta(),
         ruff::meta(),
+        black::meta(),
     ];
     for m in items {
         map.insert(m.id.0, m);
