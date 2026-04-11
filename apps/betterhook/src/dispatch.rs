@@ -157,21 +157,194 @@ pub fn resolve_packages<'a>(
 }
 
 /// Pick the right hook for a [`PackageMatch`] on a given name.
-/// Package-level hooks win; otherwise fall back to the root hook.
-/// Phase 35 layers per-job overrides on top of the root instead of
-/// picking one or the other wholesale.
+///
+/// Phase 35 semantics:
+/// - `Root` match → the config's root hook for that name
+/// - `Package` match with no package-level hook → the root hook
+/// - `Package` match with a package-level hook → a **merged** hook
+///   that layers the package's jobs on top of the root's jobs:
+///   same-named jobs are replaced wholesale, new jobs are added,
+///   and hook-level flags (`parallel`, `fail_fast`, `priority`, etc.)
+///   come from the package when declared.
+///
+/// The returned `Hook` is an owned `Cow`-ish — when a merge happens
+/// we allocate a fresh `Hook`; otherwise we hand back a clone of
+/// the borrowed one. The extra clone cost is small compared to the
+/// config-load and DAG-build work that follows.
 #[must_use]
-pub fn hook_for_match<'a>(
-    config: &'a Config,
-    m: &PackageMatch<'a>,
-    hook_name: &str,
-) -> Option<&'a Hook> {
+pub fn hook_for_match(config: &Config, m: &PackageMatch<'_>, hook_name: &str) -> Option<Hook> {
     match m {
-        PackageMatch::Root(_) => config.hooks.get(hook_name),
-        PackageMatch::Package(pkg, _) => pkg
-            .hooks
-            .get(hook_name)
-            .or_else(|| config.hooks.get(hook_name)),
+        PackageMatch::Root(_) => config.hooks.get(hook_name).cloned(),
+        PackageMatch::Package(pkg, _) => {
+            let package_hook = pkg.hooks.get(hook_name);
+            let root_hook = config.hooks.get(hook_name);
+            match (package_hook, root_hook) {
+                (None, None) => None,
+                (Some(p), None) => Some(p.clone()),
+                (None, Some(r)) => Some(r.clone()),
+                (Some(p), Some(r)) => Some(merge_hooks(r, p)),
+            }
+        }
+    }
+}
+
+/// Overlay package hook `overlay` on top of root hook `base`.
+/// - Hook-level flags: overlay wins
+/// - Jobs: overlay's jobs replace same-named root jobs; otherwise
+///   root jobs are kept as-is
+/// - Order: root jobs first in priority order, then overlay-only
+///   jobs, then sort by priority so the final result is stable
+fn merge_hooks(base: &Hook, overlay: &Hook) -> Hook {
+    let mut jobs: Vec<crate::config::Job> = Vec::new();
+    // Overlay job names that replace base entries.
+    let overlay_names: std::collections::BTreeSet<&str> =
+        overlay.jobs.iter().map(|j| j.name.as_str()).collect();
+    for base_job in &base.jobs {
+        if overlay_names.contains(base_job.name.as_str()) {
+            continue;
+        }
+        jobs.push(base_job.clone());
+    }
+    for overlay_job in &overlay.jobs {
+        jobs.push(overlay_job.clone());
+    }
+    jobs.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.name.cmp(&b.name)));
+    Hook {
+        name: base.name.clone(),
+        parallel: overlay.parallel || base.parallel,
+        fail_fast: overlay.fail_fast || base.fail_fast,
+        parallel_limit: overlay.parallel_limit.or(base.parallel_limit),
+        stash_untracked: overlay.stash_untracked,
+        jobs,
+    }
+}
+
+#[cfg(test)]
+mod hook_merge_tests {
+    use super::*;
+    use crate::config::{IsolateSpec, Job, Package};
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    fn mk_job(name: &str, priority: u32) -> Job {
+        Job {
+            name: name.to_owned(),
+            run: "true".to_owned(),
+            fix: None,
+            glob: Vec::new(),
+            exclude: Vec::new(),
+            tags: Vec::new(),
+            skip: None,
+            only: None,
+            env: BTreeMap::new(),
+            root: None,
+            stage_fixed: false,
+            isolate: None::<IsolateSpec>,
+            timeout: None,
+            interactive: false,
+            fail_text: None,
+            priority,
+            reads: Vec::new(),
+            writes: Vec::new(),
+            network: false,
+            concurrent_safe: false,
+        }
+    }
+
+    fn mk_hook(name: &str, jobs: Vec<Job>) -> Hook {
+        Hook {
+            name: name.to_owned(),
+            parallel: false,
+            fail_fast: false,
+            parallel_limit: None,
+            stash_untracked: false,
+            jobs,
+        }
+    }
+
+    fn mk_config(root_hooks: Vec<Hook>, pkgs: Vec<(String, &str, Vec<Hook>)>) -> Config {
+        let mut hooks = BTreeMap::new();
+        for h in root_hooks {
+            hooks.insert(h.name.clone(), h);
+        }
+        let mut packages = BTreeMap::new();
+        for (name, path, hooks_vec) in pkgs {
+            let mut pkg_hooks = BTreeMap::new();
+            for h in hooks_vec {
+                pkg_hooks.insert(h.name.clone(), h);
+            }
+            packages.insert(
+                name.clone(),
+                Package {
+                    name,
+                    path: PathBuf::from(path),
+                    hooks: pkg_hooks,
+                },
+            );
+        }
+        Config {
+            meta: crate::config::Meta {
+                version: 1,
+                min_betterhook: None,
+            },
+            hooks,
+            packages,
+        }
+    }
+
+    #[test]
+    fn package_job_replaces_root_job_of_same_name() {
+        let root = mk_hook(
+            "pre-commit",
+            vec![mk_job("lint", 0), mk_job("test", 1)],
+        );
+        let pkg_hook = mk_hook("pre-commit", vec![mk_job("lint", 0)]); // pretend it's a different lint
+        let config = mk_config(
+            vec![root],
+            vec![("frontend".to_owned(), "apps/web", vec![pkg_hook])],
+        );
+        let match_ = PackageMatch::Package(
+            config.packages.get("frontend").unwrap(),
+            vec![PathBuf::from("apps/web/src/a.ts")],
+        );
+        let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
+        // Only one "lint", plus the "test" from root.
+        assert_eq!(merged.jobs.len(), 2);
+        let names: Vec<&str> = merged.jobs.iter().map(|j| j.name.as_str()).collect();
+        assert!(names.contains(&"lint"));
+        assert!(names.contains(&"test"));
+    }
+
+    #[test]
+    fn package_with_no_hook_falls_back_to_root() {
+        let root = mk_hook("pre-commit", vec![mk_job("lint", 0)]);
+        let config = mk_config(
+            vec![root],
+            vec![("frontend".to_owned(), "apps/web", Vec::new())],
+        );
+        let match_ = PackageMatch::Package(
+            config.packages.get("frontend").unwrap(),
+            vec![PathBuf::from("apps/web/a.ts")],
+        );
+        let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
+        assert_eq!(merged.jobs.len(), 1);
+        assert_eq!(merged.jobs[0].name, "lint");
+    }
+
+    #[test]
+    fn package_only_hook_works_without_root() {
+        let pkg_hook = mk_hook("pre-commit", vec![mk_job("scoped", 0)]);
+        let config = mk_config(
+            Vec::new(),
+            vec![("frontend".to_owned(), "apps/web", vec![pkg_hook])],
+        );
+        let match_ = PackageMatch::Package(
+            config.packages.get("frontend").unwrap(),
+            vec![PathBuf::from("apps/web/a.ts")],
+        );
+        let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
+        assert_eq!(merged.jobs.len(), 1);
+        assert_eq!(merged.jobs[0].name, "scoped");
     }
 }
 
