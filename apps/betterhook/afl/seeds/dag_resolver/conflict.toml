@@ -1,0 +1,7 @@
+[hooks.pre-commit.jobs.fmt]
+run = "true"
+writes = ["**/*.ts"]
+
+[hooks.pre-commit.jobs.lint]
+run = "true"
+reads = ["**/*.ts"]

@@ -1,0 +1,1 @@
+{"reason":"compiler-message","message":{"message":"unused variable","level":"warning","code":{"code":"unused_variables"},"spans":[{"file_name":"src/main.rs","line_start":3,"column_start":9,"is_primary":true}]}}

@@ -1,0 +1,52 @@
+[package]
+name = "betterhook-afl"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "afl.rs (American Fuzzy Lop) fuzz harnesses for betterhook."
+
+[dependencies]
+afl = "0.15"
+betterhook = { path = ".." }
+
+[[bin]]
+name = "config_parse"
+path = "src/bin/config_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "dag_resolver"
+path = "src/bin/dag_resolver.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "clippy_parser"
+path = "src/bin/clippy_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "eslint_parser"
+path = "src/bin/eslint_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "husky_importer"
+path = "src/bin/husky_importer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "cache_key"
+path = "src/bin/cache_key.rs"
+test = false
+doc = false
+
+# Excluded from the workspace so `cargo build --workspace` never tries
+# to compile the afl harnesses without the `cargo afl` runtime built.
+# Run `cargo install afl` once, then `cd apps/betterhook/afl && cargo afl
+# build && cargo afl fuzz -i seeds/<target> -o out target/debug/<target>`.
+[workspace]
