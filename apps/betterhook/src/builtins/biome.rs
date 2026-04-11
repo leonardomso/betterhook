@@ -23,12 +23,54 @@
 //! Biome historically also reported `files` with nested diagnostics;
 //! we handle both shapes defensively.
 
-use serde_json::Value;
+use serde::Deserialize;
 
 use crate::runner::output::DiagnosticSeverity;
 
 use super::common::severity_from_level;
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
+
+/// Subset of the biome `check --reporter=json` schema. Biome's shape
+/// has varied across versions — we only bind the fields that have
+/// been stable across the releases we support, and use
+/// `#[serde(default)]` throughout so a schema shift doesn't break us.
+#[derive(Debug, Deserialize, Default)]
+struct BiomeReport {
+    #[serde(default)]
+    diagnostics: Vec<BiomeDiagnostic>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct BiomeDiagnostic {
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
+    severity: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    location: Option<BiomeLocation>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct BiomeLocation {
+    #[serde(default)]
+    path: Option<BiomePath>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(untagged)]
+enum BiomePath {
+    Structured {
+        #[serde(default)]
+        file: String,
+    },
+    Bare(String),
+    #[default]
+    Missing,
+}
 
 #[must_use]
 pub fn meta() -> BuiltinMeta {
@@ -46,50 +88,40 @@ pub fn meta() -> BuiltinMeta {
     }
 }
 
-fn diag_from_value(v: &Value) -> Diagnostic {
-    let severity = v
-        .get("severity")
-        .and_then(Value::as_str)
+fn diag_from_biome(d: BiomeDiagnostic) -> Diagnostic {
+    let severity = d
+        .severity
+        .as_deref()
         .map_or(DiagnosticSeverity::Warning, severity_from_level);
-    let message = v
-        .get("description")
-        .and_then(Value::as_str)
-        .or_else(|| v.get("message").and_then(Value::as_str))
-        .unwrap_or("")
-        .to_owned();
-    let rule = v
-        .get("category")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let file = v
-        .get("location")
-        .and_then(|l| l.get("path"))
-        .and_then(|p| p.get("file").or(Some(p)))
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_owned();
+    let message = d
+        .description
+        .or(d.message)
+        .unwrap_or_default();
+    let file = d
+        .location
+        .and_then(|l| l.path)
+        .map(|p| match p {
+            BiomePath::Structured { file } => file,
+            BiomePath::Bare(s) => s,
+            BiomePath::Missing => String::new(),
+        })
+        .unwrap_or_default();
     Diagnostic {
         file,
         line: None,
         column: None,
         severity,
         message,
-        rule,
+        rule: d.category,
     }
 }
 
 #[must_use]
 pub fn parse_output(stdout: &str) -> Vec<Diagnostic> {
-    let Ok(root) = serde_json::from_str::<Value>(stdout) else {
+    let Ok(root) = serde_json::from_str::<BiomeReport>(stdout) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    if let Some(arr) = root.get("diagnostics").and_then(Value::as_array) {
-        for v in arr {
-            out.push(diag_from_value(v));
-        }
-    }
-    out
+    root.diagnostics.into_iter().map(diag_from_biome).collect()
 }
 
 #[cfg(test)]

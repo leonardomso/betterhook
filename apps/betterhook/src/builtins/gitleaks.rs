@@ -16,11 +16,25 @@
 //! ]
 //! ```
 
-use serde_json::Value;
+use serde::Deserialize;
 
 use crate::runner::output::DiagnosticSeverity;
 
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
+
+#[derive(Debug, Deserialize, Default)]
+struct GitleaksFinding {
+    #[serde(default, rename = "RuleID")]
+    rule_id: Option<String>,
+    #[serde(default, rename = "Description")]
+    description: Option<String>,
+    #[serde(default, rename = "File")]
+    file: String,
+    #[serde(default, rename = "StartLine")]
+    start_line: Option<u64>,
+    #[serde(default, rename = "StartColumn")]
+    start_column: Option<u64>,
+}
 
 #[must_use]
 pub fn meta() -> BuiltinMeta {
@@ -40,43 +54,27 @@ pub fn meta() -> BuiltinMeta {
 
 #[must_use]
 pub fn parse_output(stdout: &str) -> Vec<Diagnostic> {
-    let Ok(Value::Array(items)) = serde_json::from_str::<Value>(stdout) else {
+    let Ok(items) = serde_json::from_str::<Vec<GitleaksFinding>>(stdout) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    for item in items {
-        let file = item
-            .get("File")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
-        let line = item
-            .get("StartLine")
-            .and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
-        let column = item
-            .get("StartColumn")
-            .and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
-        let rule = item
-            .get("RuleID")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let description = item
-            .get("Description")
-            .and_then(Value::as_str)
-            .unwrap_or("secret detected");
-        let message = format!("{description} — remove before committing");
-        out.push(Diagnostic {
-            file,
-            line,
-            column,
-            severity: DiagnosticSeverity::Error,
-            message,
-            rule,
-        });
-    }
-    out
+    items
+        .into_iter()
+        .map(|item| {
+            let description = item
+                .description
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("secret detected");
+            Diagnostic {
+                file: item.file,
+                line: item.start_line.and_then(|n| u32::try_from(n).ok()),
+                column: item.start_column.and_then(|n| u32::try_from(n).ok()),
+                severity: DiagnosticSeverity::Error,
+                message: format!("{description} — remove before committing"),
+                rule: item.rule_id,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

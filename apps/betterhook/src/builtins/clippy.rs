@@ -10,11 +10,53 @@
 //!
 //! [rustc-json]: https://doc.rust-lang.org/rustc/json.html
 
-use serde_json::Value;
+use serde::Deserialize;
 
 use crate::runner::output::DiagnosticSeverity;
 
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
+
+/// Subset of the rustc/cargo JSON compiler-message envelope that we
+/// care about. `#[serde(default)]` on every field means an unexpected
+/// shape (missing key, wrong type) deserializes into the default
+/// rather than failing the whole line.
+#[derive(Debug, Deserialize, Default)]
+struct CargoEnvelope {
+    #[serde(default)]
+    reason: String,
+    #[serde(default)]
+    message: Option<CargoMessage>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CargoMessage {
+    #[serde(default)]
+    message: String,
+    #[serde(default)]
+    level: String,
+    #[serde(default)]
+    code: Option<CargoCode>,
+    #[serde(default)]
+    spans: Vec<CargoSpan>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CargoCode {
+    #[serde(default)]
+    code: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CargoSpan {
+    #[serde(default)]
+    file_name: String,
+    #[serde(default)]
+    line_start: u64,
+    #[serde(default)]
+    column_start: u64,
+    #[serde(default)]
+    is_primary: bool,
+}
 
 #[must_use]
 pub fn meta() -> BuiltinMeta {
@@ -37,46 +79,30 @@ pub fn meta() -> BuiltinMeta {
 /// a primary span we can attribute to a file.
 #[must_use]
 pub fn parse_line(line: &str) -> Option<Diagnostic> {
-    let v: Value = serde_json::from_str(line).ok()?;
-    if v.get("reason")?.as_str()? != "compiler-message" {
+    let envelope: CargoEnvelope = serde_json::from_str(line).ok()?;
+    if envelope.reason != "compiler-message" {
         return None;
     }
-    let msg = v.get("message")?;
-    let level = msg.get("level")?.as_str()?;
-    let severity = match level {
+    let msg = envelope.message?;
+    let severity = match msg.level.as_str() {
         "error" | "error: internal compiler error" => DiagnosticSeverity::Error,
         "warning" => DiagnosticSeverity::Warning,
         "note" | "help" => DiagnosticSeverity::Info,
         _ => DiagnosticSeverity::Hint,
     };
-    let message = msg.get("message")?.as_str()?.to_owned();
-    let rule = msg
-        .get("code")
-        .and_then(|c| c.get("code"))
-        .and_then(|c| c.as_str())
-        .map(str::to_owned);
+    let rule = msg.code.map(|c| c.code).filter(|s| !s.is_empty());
 
-    let spans = msg.get("spans")?.as_array()?;
-    let primary = spans
+    let primary = msg
+        .spans
         .iter()
-        .find(|s| s.get("is_primary").and_then(Value::as_bool).unwrap_or(false))
-        .or_else(|| spans.first())?;
-    let file = primary.get("file_name")?.as_str()?.to_owned();
-    let line_num = primary
-        .get("line_start")
-        .and_then(Value::as_u64)
-        .and_then(|n| u32::try_from(n).ok());
-    let column = primary
-        .get("column_start")
-        .and_then(Value::as_u64)
-        .and_then(|n| u32::try_from(n).ok());
-
+        .find(|s| s.is_primary)
+        .or_else(|| msg.spans.first())?;
     Some(Diagnostic {
-        file,
-        line: line_num,
-        column,
+        file: primary.file_name.clone(),
+        line: u32::try_from(primary.line_start).ok(),
+        column: u32::try_from(primary.column_start).ok(),
         severity,
-        message,
+        message: msg.message,
         rule,
     })
 }

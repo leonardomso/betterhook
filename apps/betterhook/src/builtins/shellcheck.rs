@@ -14,12 +14,28 @@
 //! }
 //! ```
 
-use serde_json::Value;
+use serde::Deserialize;
 
 use crate::runner::output::DiagnosticSeverity;
 
 use super::common::severity_from_level;
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
+
+#[derive(Debug, Deserialize, Default)]
+struct ShellcheckItem {
+    #[serde(default)]
+    file: String,
+    #[serde(default)]
+    line: Option<u64>,
+    #[serde(default)]
+    column: Option<u64>,
+    #[serde(default)]
+    level: String,
+    #[serde(default)]
+    code: Option<u64>,
+    #[serde(default)]
+    message: String,
+}
 
 #[must_use]
 pub fn meta() -> BuiltinMeta {
@@ -39,47 +55,24 @@ pub fn meta() -> BuiltinMeta {
 
 #[must_use]
 pub fn parse_output(stdout: &str) -> Vec<Diagnostic> {
-    let Ok(Value::Array(items)) = serde_json::from_str::<Value>(stdout) else {
+    let Ok(items) = serde_json::from_str::<Vec<ShellcheckItem>>(stdout) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    for item in items {
-        let file = item
-            .get("file")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
-        let line = item
-            .get("line")
-            .and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
-        let column = item
-            .get("column")
-            .and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
-        let severity = item
-            .get("level")
-            .and_then(Value::as_str)
-            .map_or(DiagnosticSeverity::Warning, severity_from_level);
-        let message = item
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
-        let rule = item
-            .get("code")
-            .and_then(Value::as_u64)
-            .map(|c| format!("SC{c}"));
-        out.push(Diagnostic {
-            file,
-            line,
-            column,
-            severity,
-            message,
-            rule,
-        });
-    }
-    out
+    items
+        .into_iter()
+        .map(|item| Diagnostic {
+            file: item.file,
+            line: item.line.and_then(|n| u32::try_from(n).ok()),
+            column: item.column.and_then(|n| u32::try_from(n).ok()),
+            severity: if item.level.is_empty() {
+                DiagnosticSeverity::Warning
+            } else {
+                severity_from_level(&item.level)
+            },
+            message: item.message,
+            rule: item.code.map(|c| format!("SC{c}")),
+        })
+        .collect()
 }
 
 #[cfg(test)]

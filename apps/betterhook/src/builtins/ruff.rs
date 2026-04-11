@@ -15,11 +15,31 @@
 //! ]
 //! ```
 
-use serde_json::Value;
+use serde::Deserialize;
 
 use crate::runner::output::DiagnosticSeverity;
 
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
+
+#[derive(Debug, Deserialize, Default)]
+struct RuffItem {
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    message: String,
+    #[serde(default)]
+    filename: String,
+    #[serde(default)]
+    location: Option<RuffLocation>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct RuffLocation {
+    #[serde(default)]
+    row: Option<u64>,
+    #[serde(default)]
+    column: Option<u64>,
+}
 
 #[must_use]
 pub fn meta() -> BuiltinMeta {
@@ -39,41 +59,28 @@ pub fn meta() -> BuiltinMeta {
 
 #[must_use]
 pub fn parse_output(stdout: &str) -> Vec<Diagnostic> {
-    let Ok(Value::Array(items)) = serde_json::from_str::<Value>(stdout) else {
+    let Ok(items) = serde_json::from_str::<Vec<RuffItem>>(stdout) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    for item in items {
-        let file = item
-            .get("filename")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
-        let message = item
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
-        let rule = item.get("code").and_then(Value::as_str).map(str::to_owned);
-        let loc = item.get("location");
-        let line = loc
-            .and_then(|l| l.get("row"))
-            .and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
-        let column = loc
-            .and_then(|l| l.get("column"))
-            .and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
-        out.push(Diagnostic {
-            file,
-            line,
-            column,
-            severity: DiagnosticSeverity::Warning,
-            message,
-            rule,
-        });
-    }
-    out
+    items
+        .into_iter()
+        .map(|item| {
+            let (line, column) = item.location.map_or((None, None), |l| {
+                (
+                    l.row.and_then(|n| u32::try_from(n).ok()),
+                    l.column.and_then(|n| u32::try_from(n).ok()),
+                )
+            });
+            Diagnostic {
+                file: item.filename,
+                line,
+                column,
+                severity: DiagnosticSeverity::Warning,
+                message: item.message,
+                rule: item.code,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
