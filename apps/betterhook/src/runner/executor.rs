@@ -585,6 +585,10 @@ mod tests {
             interactive: false,
             fail_text: None,
             priority: 0,
+            reads: Vec::new(),
+            writes: Vec::new(),
+            network: false,
+            concurrent_safe: false,
         }
     }
 

@@ -168,6 +168,10 @@ fn parse_job(node: &KdlNode) -> ConfigResult<(String, RawJob)> {
             "interactive" => job.interactive = first_positional_bool(child),
             "timeout" => job.timeout = first_positional_string(child),
             "fail_text" => job.fail_text = first_positional_string(child),
+            "reads" => job.reads = all_positional_strings(child),
+            "writes" => job.writes = all_positional_strings(child),
+            "network" => job.network = first_positional_bool(child),
+            "concurrent_safe" => job.concurrent_safe = first_positional_bool(child),
             "env" => {
                 // `env KEY="value" OTHER="value"` — all properties.
                 for entry in child.entries() {

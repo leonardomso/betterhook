@@ -227,6 +227,12 @@ fn convert_command(
         timeout: None,
         interactive: lh.interactive,
         fail_text: lh.fail_text,
+        // lefthook has no capability manifest — v1 migration notes
+        // tell users to declare these explicitly.
+        reads: Vec::new(),
+        writes: Vec::new(),
+        network: None,
+        concurrent_safe: None,
     }
 }
 

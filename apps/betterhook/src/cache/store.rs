@@ -53,10 +53,7 @@ mod systemtime_as_secs {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(t: &SystemTime, s: S) -> Result<S::Ok, S::Error> {
-        let secs = t
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let secs = t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         secs.serialize(s)
     }
 

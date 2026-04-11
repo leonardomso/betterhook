@@ -83,6 +83,16 @@ pub struct RawJob {
     pub interactive: Option<bool>,
     #[serde(default)]
     pub fail_text: Option<String>,
+
+    // v1 capability DAG fields (phase 25+).
+    #[serde(default)]
+    pub reads: Vec<String>,
+    #[serde(default)]
+    pub writes: Vec<String>,
+    #[serde(default)]
+    pub network: Option<bool>,
+    #[serde(default)]
+    pub concurrent_safe: Option<bool>,
 }
 
 /// Raw, serde-friendly isolation spec.
@@ -138,6 +148,7 @@ pub struct Hook {
     pub jobs: Vec<Job>,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
     pub name: String,
@@ -156,6 +167,24 @@ pub struct Job {
     pub interactive: bool,
     pub fail_text: Option<String>,
     pub priority: u32,
+
+    // v1 capability DAG fields (phase 25). Phase 26's DAG resolver
+    // compiles `reads`/`writes` into `GlobSet`s and uses them to
+    // decide which jobs can run in parallel.
+    /// Glob patterns describing files this job reads from. Used by
+    /// the DAG resolver to detect read-after-write conflicts.
+    pub reads: Vec<String>,
+    /// Glob patterns describing files this job writes. Used by the
+    /// DAG resolver to detect write-write and read-after-write
+    /// conflicts.
+    pub writes: Vec<String>,
+    /// True if this job reaches the network. Network jobs are
+    /// serialized behind a shared lock unless `concurrent_safe`.
+    pub network: bool,
+    /// True if this job is safe to run speculatively on file save
+    /// from the daemon watcher (phases 37-39). Safe means: no
+    /// network, no writes that touch unrelated files, idempotent.
+    pub concurrent_safe: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -273,6 +302,16 @@ fn lower_job(name: &str, raw: RawJob, priority: u32) -> ConfigResult<Job> {
         .map(|raw_iso| lower_isolate(name, raw_iso))
         .transpose()?;
 
+    // Validate reads/writes globs up-front so syntax errors surface
+    // at config-load time with a miette diagnostic instead of at DAG
+    // build time in the runner. We throw the compiled GlobSet away;
+    // phase 26 compiles them again when building the DAG.
+    for pat in raw.reads.iter().chain(raw.writes.iter()) {
+        globset::Glob::new(pat).map_err(|e| ConfigError::Invalid {
+            message: format!("job '{name}' has an invalid capability glob '{pat}': {e}"),
+        })?;
+    }
+
     Ok(Job {
         name: name.to_owned(),
         run,
@@ -290,6 +329,10 @@ fn lower_job(name: &str, raw: RawJob, priority: u32) -> ConfigResult<Job> {
         interactive: raw.interactive.unwrap_or(false),
         fail_text: raw.fail_text,
         priority,
+        reads: raw.reads,
+        writes: raw.writes,
+        network: raw.network.unwrap_or(false),
+        concurrent_safe: raw.concurrent_safe.unwrap_or(false),
     })
 }
 
@@ -376,6 +419,8 @@ impl RawJob {
         take_if_some!(timeout);
         take_if_some!(interactive);
         take_if_some!(fail_text);
+        take_if_some!(network);
+        take_if_some!(concurrent_safe);
         if !overlay.glob.is_empty() {
             self.glob = overlay.glob;
         }
@@ -384,6 +429,12 @@ impl RawJob {
         }
         if !overlay.tags.is_empty() {
             self.tags = overlay.tags;
+        }
+        if !overlay.reads.is_empty() {
+            self.reads = overlay.reads;
+        }
+        if !overlay.writes.is_empty() {
+            self.writes = overlay.writes;
         }
         for (k, v) in overlay.env {
             self.env.insert(k, v);

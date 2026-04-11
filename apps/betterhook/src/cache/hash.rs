@@ -37,7 +37,11 @@ impl CacheKey {
     #[must_use]
     pub fn relative_path(&self) -> String {
         let (head, tail) = self.tool.0.split_at(2);
-        format!("{head}/{tail}__{c}__{a}.json", c = self.content.0, a = self.args.0)
+        format!(
+            "{head}/{tail}__{c}__{a}.json",
+            c = self.content.0,
+            a = self.args.0
+        )
     }
 }
 
@@ -76,7 +80,11 @@ pub fn args_hash(args: &[String]) -> ArgsHash {
 /// Combine the three axes into a single `CacheKey`.
 #[must_use]
 pub fn combine_key(content: ContentHash, tool: ToolHash, args: ArgsHash) -> CacheKey {
-    CacheKey { content, tool, args }
+    CacheKey {
+        content,
+        tool,
+        args,
+    }
 }
 
 #[cfg(test)]
