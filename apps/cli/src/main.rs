@@ -34,6 +34,8 @@ enum Command {
     Migrate(commands::migrate::Args),
     /// Inspect, clear, or verify the content-addressable hook cache.
     Cache(commands::cache::Args),
+    /// Discover builtin linter/formatter wrappers.
+    Builtins(commands::builtins::Args),
     /// Internal: invoked by the installed wrapper script. Not for direct use.
     #[command(name = "__dispatch", hide = true)]
     Dispatch(commands::dispatch::Args),
@@ -55,6 +57,7 @@ async fn main() -> miette::Result<()> {
         Command::Fix(args) => commands::fix::run(args).await,
         Command::Migrate(args) => commands::migrate::run(&args),
         Command::Cache(args) => commands::cache::run(args).await,
+        Command::Builtins(args) => commands::builtins::run(args),
         Command::Dispatch(args) => commands::dispatch::run(args).await,
         Command::Serve(args) => commands::serve::run(args).await,
     }
