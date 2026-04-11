@@ -19,11 +19,13 @@ use std::collections::BTreeMap;
 
 use crate::runner::output::DiagnosticSeverity;
 
+pub mod biome;
 pub mod black;
 pub mod clippy;
 pub mod eslint;
 pub mod gofmt;
 pub mod govet;
+pub mod oxlint;
 pub mod prettier;
 pub mod ruff;
 pub mod rustfmt;
@@ -81,6 +83,8 @@ pub fn registry() -> BTreeMap<&'static str, BuiltinMeta> {
         black::meta(),
         gofmt::meta(),
         govet::meta(),
+        biome::meta(),
+        oxlint::meta(),
     ];
     for m in items {
         map.insert(m.id.0, m);
