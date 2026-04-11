@@ -43,6 +43,7 @@ pub struct SpeculativeStats {
     pub disabled_reason: Option<String>,
 }
 
+/// Sidecar file name written under `<common-dir>/betterhook/`.
 pub const STATS_FILENAME: &str = "speculative-stats.json";
 
 /// Absolute path to the stats sidecar file for a given common-dir.
@@ -85,15 +86,22 @@ pub fn write_stats(common_dir: &Path, stats: &SpeculativeStats) {
 /// against it. The orchestrator hands these to the scheduler.
 #[derive(Debug, Clone)]
 pub struct SpeculativeTask {
+    /// Absolute path of the file that changed and triggered this task.
     pub file: PathBuf,
+    /// Hook name (usually `pre-commit`) whose jobs should prewarm.
     pub hook_name: String,
+    /// Jobs to run against `file`. Only `concurrent_safe` jobs are
+    /// ever emitted here.
     pub jobs: Vec<Job>,
 }
 
 /// Per-hook compiled glob state. Cached across events so we only
 /// pay the globset build cost once per config load.
 pub struct HookMatcher {
+    /// Hook name this matcher belongs to.
     pub hook_name: String,
+    /// `(job, compiled_include_globset)` for every `concurrent_safe`
+    /// job in the hook.
     pub jobs: Vec<(Job, GlobSet)>,
 }
 

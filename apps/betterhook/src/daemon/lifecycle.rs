@@ -156,11 +156,16 @@ WantedBy=default.target
     )
 }
 
-/// Outcome of installing a unit file.
+/// Outcome of installing a unit file. Returned by [`install_unit`]
+/// and surfaced to the user via the install report so they can
+/// finalize the bootstrap (launchctl load / systemctl --user enable).
 #[derive(Debug, Clone)]
 pub struct InstalledUnit {
+    /// Which platform unit file format was written.
     pub kind: UnitKind,
+    /// Absolute path of the written unit file.
     pub path: PathBuf,
+    /// One-line shell command the user can run to load the unit.
     pub load_command: String,
 }
 
