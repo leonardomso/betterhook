@@ -283,8 +283,7 @@ async fn run_sequential(
         }
 
         if let Some(before) = before_unstaged {
-            let _g = ctx.git_lock.lock().await;
-            apply_stage_fixed(ctx.worktree, &before).await?;
+            apply_stage_fixed(ctx.worktree, &before, ctx.git_lock).await?;
         }
 
         jobs_run += 1;
@@ -585,8 +584,7 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
     let captured = tee.await.unwrap_or_default();
 
     if let Some(before) = before_unstaged {
-        let _g = git_lock.lock().await;
-        apply_stage_fixed(&worktree, &before).await?;
+        apply_stage_fixed(&worktree, &before, &git_lock).await?;
     }
 
     // Cache the events on a clean run of a concurrent_safe job.
@@ -678,7 +676,20 @@ async fn snapshot_unstaged_if_needed(
 /// that weren't dirty before. This is the `stage_fixed` semantics:
 /// formatters edit files in-place, and without this step those edits
 /// wouldn't make it into the commit.
-async fn apply_stage_fixed(worktree: &Path, before: &HashSet<PathBuf>) -> RunResult<()> {
+///
+/// v1.0.1: split into a read phase (runs without `git_lock` — it's
+/// just `git status`, safe concurrently) and a mutation phase (runs
+/// under the lock). Previously the whole function ran under the lock,
+/// which serialized the git-status scans of parallel DAG jobs on each
+/// other for no reason.
+async fn apply_stage_fixed(
+    worktree: &Path,
+    before: &HashSet<PathBuf>,
+    git_lock: &GitIndexLock,
+) -> RunResult<()> {
+    // Read phase: no lock held. `git status --porcelain` never
+    // mutates the index, and two worktrees calling it concurrently is
+    // perfectly safe.
     let after: HashSet<PathBuf> = unstaged_files(worktree).await?.into_iter().collect();
     let newly: Vec<PathBuf> = after.difference(before).cloned().collect();
     if newly.is_empty() {
@@ -690,6 +701,8 @@ async fn apply_stage_fixed(worktree: &Path, before: &HashSet<PathBuf>) -> RunRes
     for p in &newly {
         args.push(p.as_os_str().to_os_string());
     }
+    // Write phase: hold the lock only around the `git add`.
+    let _g = git_lock.lock().await;
     run_git(worktree, args).await?;
     Ok(())
 }
