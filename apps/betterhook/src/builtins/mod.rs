@@ -23,12 +23,14 @@ pub mod biome;
 pub mod black;
 pub mod clippy;
 pub mod eslint;
+pub mod gitleaks;
 pub mod gofmt;
 pub mod govet;
 pub mod oxlint;
 pub mod prettier;
 pub mod ruff;
 pub mod rustfmt;
+pub mod shellcheck;
 
 /// Opaque reference used by `config::Job::builtin = "<name>"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +87,8 @@ pub fn registry() -> BTreeMap<&'static str, BuiltinMeta> {
         govet::meta(),
         biome::meta(),
         oxlint::meta(),
+        shellcheck::meta(),
+        gitleaks::meta(),
     ];
     for m in items {
         map.insert(m.id.0, m);
