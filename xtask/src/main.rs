@@ -1,28 +1,32 @@
 //! Repo-local tooling: benchmarks, stress harness, and the nightly
 //! lefthook-compat suite. Invoked via `cargo xtask <subcommand>`.
 
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
+
+mod bench_monorepo;
+mod stress;
 
 fn main() -> ExitCode {
-    let task = std::env::args().nth(1);
+    let mut iter = std::env::args().skip(1);
+    let task = iter.next();
+    let rest: Vec<String> = iter.collect();
     match task.as_deref() {
         Some("bench") => run_bench(),
-        Some("stress") => {
-            eprintln!("xtask stress is a phase 18+ follow-up — see plan section §I");
-            ExitCode::from(1)
-        }
+        Some("bench-monorepo") => bench_monorepo::run(&rest),
+        Some("stress") => stress::run(&rest),
         Some("compat") => {
             eprintln!("xtask compat runs the nightly lefthook-compat diff suite (TODO)");
             ExitCode::from(1)
         }
         _ => {
-            eprintln!("usage: xtask <bench|stress|compat>");
+            eprintln!("usage: xtask <bench|bench-monorepo|stress|compat>");
             ExitCode::from(64)
         }
     }
 }
 
 fn run_bench() -> ExitCode {
+    use std::process::Command;
     let targets = ["config_parse", "output_multiplexer"];
     for target in targets {
         println!("=== cargo bench -p betterhook --bench {target} ===");
