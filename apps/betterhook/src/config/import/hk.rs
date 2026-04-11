@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::config::schema::{RawConfig, RawHook, RawJob, RawMeta};
+use crate::config::schema::{RawConfig, RawHook, RawJob};
 use crate::error::{ConfigError, ConfigResult};
 
 use super::MigrationReport;
@@ -84,32 +84,15 @@ pub fn from_text(source: &str) -> ConfigResult<(RawConfig, MigrationReport)> {
                     fix: step.fix,
                     glob: step.glob.map(StringOrVec::into_vec).unwrap_or_default(),
                     exclude: step.exclude.map(StringOrVec::into_vec).unwrap_or_default(),
-                    tags: Vec::new(),
-                    skip: None,
-                    only: None,
-                    env: BTreeMap::new(),
-                    root: None,
-                    stage_fixed: None,
-                    isolate: None,
-                    timeout: None,
-                    interactive: None,
-                    fail_text: None,
-                    reads: Vec::new(),
-                    writes: Vec::new(),
-                    network: None,
-                    concurrent_safe: None,
+                    ..RawJob::default()
                 },
             );
         }
         hooks.insert(
             hook_name,
             RawHook {
-                parallel: None,
-                fail_fast: None,
-                priority: Vec::new(),
-                stash_untracked: None,
-                parallel_limit: None,
                 jobs,
+                ..RawHook::default()
             },
         );
     }
@@ -119,18 +102,7 @@ pub fn from_text(source: &str) -> ConfigResult<(RawConfig, MigrationReport)> {
             .to_owned(),
     );
 
-    Ok((
-        RawConfig {
-            meta: Some(RawMeta {
-                version: Some(1),
-                min_betterhook: None,
-            }),
-            extends: Vec::new(),
-            hooks,
-            packages: BTreeMap::new(),
-        },
-        report,
-    ))
+    Ok((RawConfig::v1_from_hooks(hooks), report))
 }
 
 #[cfg(test)]

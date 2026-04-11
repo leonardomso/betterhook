@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::config::schema::{RawConfig, RawHook, RawIsolate, RawIsolateTable, RawJob, RawMeta};
+use crate::config::schema::{RawConfig, RawHook, RawIsolate, RawIsolateTable, RawJob};
 use crate::error::{ConfigError, ConfigResult};
 
 use super::MigrationReport;
@@ -86,15 +86,7 @@ pub fn from_yaml(source: &str) -> ConfigResult<(RawConfig, MigrationReport)> {
     };
 
     let mut report = MigrationReport::default();
-    let mut config = RawConfig {
-        meta: Some(RawMeta {
-            version: Some(1),
-            min_betterhook: None,
-        }),
-        extends: Vec::new(),
-        hooks: BTreeMap::new(),
-        packages: BTreeMap::new(),
-    };
+    let mut config = RawConfig::v1_from_hooks(BTreeMap::new());
 
     for (key, value) in mapping {
         let Some(hook_name) = key.as_str().map(str::to_owned) else {
@@ -134,10 +126,8 @@ fn convert_hook(name: &str, lh: LefthookHook, report: &mut MigrationReport) -> R
     RawHook {
         parallel: lh.parallel,
         fail_fast: lh.follow.map(|f| !f),
-        priority: Vec::new(),
-        stash_untracked: None,
-        parallel_limit: None,
         jobs,
+        ..RawHook::default()
     }
 }
 
@@ -179,15 +169,12 @@ fn convert_command(
     let isolate = lh.isolate.map(|name| {
         RawIsolate::Table(RawIsolateTable {
             name: Some(name),
-            tool: None,
-            slots: None,
-            target_dir: None,
+            ..RawIsolateTable::default()
         })
     });
 
     RawJob {
         run: Some(run),
-        fix: None,
         glob: lh.glob.map(StringOrVec::into_vec).unwrap_or_default(),
         exclude: lh.exclude.map(StringOrVec::into_vec).unwrap_or_default(),
         tags: lh.tags.map(StringOrVec::into_vec).unwrap_or_default(),
@@ -197,13 +184,9 @@ fn convert_command(
         root: lh.root.map(std::path::PathBuf::from),
         stage_fixed: lh.stage_fixed,
         isolate,
-        timeout: None,
         interactive: lh.interactive,
         fail_text: lh.fail_text,
-        reads: Vec::new(),
-        writes: Vec::new(),
-        network: None,
-        concurrent_safe: None,
+        ..RawJob::default()
     }
 }
 

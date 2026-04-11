@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::config::schema::{RawConfig, RawHook, RawJob, RawMeta};
+use crate::config::schema::{RawConfig, RawHook, RawJob};
 use crate::error::ConfigResult;
 
 use super::MigrationReport;
@@ -49,23 +49,7 @@ pub fn from_script(source: &str, path: &Path) -> ConfigResult<(RawConfig, Migrat
             job_name,
             RawJob {
                 run: Some(stripped.to_owned()),
-                fix: None,
-                glob: Vec::new(),
-                exclude: Vec::new(),
-                tags: Vec::new(),
-                skip: None,
-                only: None,
-                env: BTreeMap::new(),
-                root: None,
-                stage_fixed: None,
-                isolate: None,
-                timeout: None,
-                interactive: None,
-                fail_text: None,
-                reads: Vec::new(),
-                writes: Vec::new(),
-                network: None,
-                concurrent_safe: None,
+                ..RawJob::default()
             },
         );
     }
@@ -80,12 +64,8 @@ pub fn from_script(source: &str, path: &Path) -> ConfigResult<(RawConfig, Migrat
     hooks.insert(
         hook_name.clone(),
         RawHook {
-            parallel: None,
-            fail_fast: None,
-            priority: Vec::new(),
-            stash_untracked: None,
-            parallel_limit: None,
             jobs,
+            ..RawHook::default()
         },
     );
     report.note(format!(
@@ -93,18 +73,7 @@ pub fn from_script(source: &str, path: &Path) -> ConfigResult<(RawConfig, Migrat
         path.display()
     ));
 
-    Ok((
-        RawConfig {
-            meta: Some(RawMeta {
-                version: Some(1),
-                min_betterhook: None,
-            }),
-            extends: Vec::new(),
-            hooks,
-            packages: BTreeMap::new(),
-        },
-        report,
-    ))
+    Ok((RawConfig::v1_from_hooks(hooks), report))
 }
 
 fn strip_runner(line: &str) -> &str {

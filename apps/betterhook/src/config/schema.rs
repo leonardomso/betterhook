@@ -31,6 +31,23 @@ pub struct RawConfig {
     pub packages: BTreeMap<String, RawPackage>,
 }
 
+impl RawConfig {
+    /// Build a `RawConfig` pre-populated with schema version 1 meta
+    /// and the given hooks map. Used by the importer modules so every
+    /// importer doesn't re-spell the same `RawMeta` boilerplate.
+    #[must_use]
+    pub fn v1_from_hooks(hooks: BTreeMap<String, RawHook>) -> Self {
+        Self {
+            meta: Some(RawMeta {
+                version: Some(1),
+                ..RawMeta::default()
+            }),
+            hooks,
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawPackage {
