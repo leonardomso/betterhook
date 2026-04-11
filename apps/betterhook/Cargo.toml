@@ -27,6 +27,7 @@ miette = { workspace = true }
 thiserror = { workspace = true }
 semver = { workspace = true }
 humantime = { workspace = true }
+globset = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
