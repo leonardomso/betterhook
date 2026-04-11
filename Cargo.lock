@@ -114,6 +114,7 @@ dependencies = [
  "humantime",
  "insta",
  "miette",
+ "owo-colors",
  "semver",
  "serde",
  "serde_json",

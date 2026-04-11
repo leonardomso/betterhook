@@ -9,5 +9,6 @@ pub mod dispatch;
 pub mod error;
 pub mod git;
 pub mod install;
+pub mod runner;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

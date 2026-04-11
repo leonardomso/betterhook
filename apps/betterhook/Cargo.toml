@@ -29,6 +29,7 @@ semver = { workspace = true }
 humantime = { workspace = true }
 globset = { workspace = true }
 sha2 = { workspace = true }
+owo-colors = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }

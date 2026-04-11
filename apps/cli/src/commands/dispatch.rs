@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use betterhook::dispatch::{Dispatch, resolve};
+use betterhook::runner::run_hook;
 
 /// Internal runtime target of the wrapper script. Intentionally hidden
 /// from `--help` because users should never call it by hand.
@@ -23,8 +24,6 @@ pub struct Args {
     pub extra: Vec<String>,
 }
 
-// phase 8 makes this async when the executor lands.
-#[allow(clippy::unused_async)]
 pub async fn run(args: Args) -> miette::Result<()> {
     let dispatch = resolve(&args.worktree, &args.hook)?;
     match dispatch {
@@ -34,13 +33,9 @@ pub async fn run(args: Args) -> miette::Result<()> {
                 .hooks
                 .get(&hook_name)
                 .expect("hook name validated by resolve()");
-            println!(
-                "[betterhook dispatch] would run {} jobs for {}",
-                hook.jobs.len(),
-                hook.name
-            );
-            for job in &hook.jobs {
-                println!("  - {} :: {}", job.name, job.run);
+            let report = run_hook(hook, &args.worktree).await?;
+            if !report.ok {
+                std::process::exit(1);
             }
             Ok(())
         }
