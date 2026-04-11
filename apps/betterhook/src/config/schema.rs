@@ -39,9 +39,9 @@ pub struct RawMeta {
 #[serde(deny_unknown_fields)]
 pub struct RawHook {
     #[serde(default)]
-    pub parallel: bool,
+    pub parallel: Option<bool>,
     #[serde(default)]
-    pub fail_fast: bool,
+    pub fail_fast: Option<bool>,
     #[serde(default)]
     pub priority: Vec<String>,
     #[serde(default)]
@@ -74,13 +74,13 @@ pub struct RawJob {
     #[serde(default)]
     pub root: Option<PathBuf>,
     #[serde(default)]
-    pub stage_fixed: bool,
+    pub stage_fixed: Option<bool>,
     #[serde(default)]
     pub isolate: Option<RawIsolate>,
     #[serde(default)]
     pub timeout: Option<String>,
     #[serde(default)]
-    pub interactive: bool,
+    pub interactive: Option<bool>,
     #[serde(default)]
     pub fail_text: Option<String>,
 }
@@ -215,6 +215,8 @@ impl RawConfig {
 
 fn lower_hook(name: &str, raw: RawHook) -> ConfigResult<Hook> {
     let stash_untracked = raw.stash_untracked.unwrap_or(name == "pre-commit");
+    let parallel = raw.parallel.unwrap_or(false);
+    let fail_fast = raw.fail_fast.unwrap_or(false);
 
     let priority_index: BTreeMap<&str, u32> = raw
         .priority
@@ -241,8 +243,8 @@ fn lower_hook(name: &str, raw: RawHook) -> ConfigResult<Hook> {
 
     Ok(Hook {
         name: name.to_owned(),
-        parallel: raw.parallel,
-        fail_fast: raw.fail_fast,
+        parallel,
+        fail_fast,
         parallel_limit: raw.parallel_limit,
         stash_untracked,
         jobs,
@@ -282,13 +284,111 @@ fn lower_job(name: &str, raw: RawJob, priority: u32) -> ConfigResult<Job> {
         only: raw.only,
         env: raw.env,
         root: raw.root,
-        stage_fixed: raw.stage_fixed,
+        stage_fixed: raw.stage_fixed.unwrap_or(false),
         isolate,
         timeout,
-        interactive: raw.interactive,
+        interactive: raw.interactive.unwrap_or(false),
         fail_text: raw.fail_text,
         priority,
     })
+}
+
+// ============================================================================
+// Merge / overlay semantics (used by the extends resolver).
+// ============================================================================
+
+impl RawConfig {
+    /// Layer `overlay` on top of `self`. Overlay fields win on conflict,
+    /// but `hooks` and `jobs` maps merge recursively so partial overrides
+    /// work naturally. The overlay's `extends` list is ignored — callers
+    /// are expected to have already resolved it before calling this.
+    pub fn merge_overlay(&mut self, overlay: RawConfig) {
+        if let Some(overlay_meta) = overlay.meta {
+            match &mut self.meta {
+                Some(base_meta) => base_meta.merge_overlay(overlay_meta),
+                slot @ None => *slot = Some(overlay_meta),
+            }
+        }
+        for (hook_name, overlay_hook) in overlay.hooks {
+            self.hooks
+                .entry(hook_name)
+                .and_modify(|base_hook| base_hook.merge_overlay(overlay_hook.clone()))
+                .or_insert(overlay_hook);
+        }
+    }
+}
+
+impl RawMeta {
+    fn merge_overlay(&mut self, overlay: RawMeta) {
+        if overlay.version.is_some() {
+            self.version = overlay.version;
+        }
+        if overlay.min_betterhook.is_some() {
+            self.min_betterhook = overlay.min_betterhook;
+        }
+    }
+}
+
+impl RawHook {
+    /// Overlay-wins merge. Jobs with the same name merge recursively.
+    pub fn merge_overlay(&mut self, overlay: RawHook) {
+        if overlay.parallel.is_some() {
+            self.parallel = overlay.parallel;
+        }
+        if overlay.fail_fast.is_some() {
+            self.fail_fast = overlay.fail_fast;
+        }
+        if !overlay.priority.is_empty() {
+            self.priority = overlay.priority;
+        }
+        if overlay.stash_untracked.is_some() {
+            self.stash_untracked = overlay.stash_untracked;
+        }
+        if overlay.parallel_limit.is_some() {
+            self.parallel_limit = overlay.parallel_limit;
+        }
+        for (job_name, overlay_job) in overlay.jobs {
+            self.jobs
+                .entry(job_name)
+                .and_modify(|base_job| base_job.merge_overlay(overlay_job.clone()))
+                .or_insert(overlay_job);
+        }
+    }
+}
+
+impl RawJob {
+    /// Overlay-wins merge. `env` merges key-by-key; lists are replaced.
+    pub fn merge_overlay(&mut self, overlay: RawJob) {
+        macro_rules! take_if_some {
+            ($field:ident) => {
+                if overlay.$field.is_some() {
+                    self.$field = overlay.$field;
+                }
+            };
+        }
+        take_if_some!(run);
+        take_if_some!(fix);
+        take_if_some!(skip);
+        take_if_some!(only);
+        take_if_some!(root);
+        take_if_some!(stage_fixed);
+        take_if_some!(isolate);
+        take_if_some!(timeout);
+        take_if_some!(interactive);
+        take_if_some!(fail_text);
+        if !overlay.glob.is_empty() {
+            self.glob = overlay.glob;
+        }
+        if !overlay.exclude.is_empty() {
+            self.exclude = overlay.exclude;
+        }
+        if !overlay.tags.is_empty() {
+            self.tags = overlay.tags;
+        }
+        for (k, v) in overlay.env {
+            self.env.insert(k, v);
+        }
+    }
 }
 
 fn lower_isolate(job: &str, raw: RawIsolate) -> ConfigResult<IsolateSpec> {
