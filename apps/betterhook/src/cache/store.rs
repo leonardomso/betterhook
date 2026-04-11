@@ -216,97 +216,17 @@ impl Store {
         Ok(self.len()? == 0)
     }
 
-    /// Return the total number of entries currently in the store.
-    /// Walks the on-disk tree — O(entries). Fine for `cache stats`
-    /// on reasonable cache sizes; a future phase can add a stats
-    /// sidecar if this ever shows up in a profile.
-    pub fn len(&self) -> StoreResult<usize> {
+    /// Walk every entry in the store's sharded tree, calling `f` on
+    /// each `DirEntry`. The shard-walking pattern was previously
+    /// duplicated across `len`, `stats`, `clear`, and `verify`; this
+    /// helper is the single source of truth.
+    fn for_each_entry<F>(&self, mut f: F) -> StoreResult<()>
+    where
+        F: FnMut(&std::fs::DirEntry) -> StoreResult<()>,
+    {
         if !self.root.is_dir() {
-            return Ok(0);
+            return Ok(());
         }
-        let mut count = 0usize;
-        for shard in std::fs::read_dir(&self.root).map_err(|source| StoreError::Io {
-            path: self.root.clone(),
-            source,
-        })? {
-            let shard = shard.map_err(|source| StoreError::Io {
-                path: self.root.clone(),
-                source,
-            })?;
-            if !shard.file_type().ok().is_some_and(|t| t.is_dir()) {
-                continue;
-            }
-            for entry in std::fs::read_dir(shard.path()).map_err(|source| StoreError::Io {
-                path: shard.path(),
-                source,
-            })? {
-                if entry.is_ok() {
-                    count += 1;
-                }
-            }
-        }
-        Ok(count)
-    }
-
-    /// Absolute root directory for this store.
-    #[must_use]
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
-
-    /// Aggregate the store into a [`Stats`] snapshot by walking every
-    /// shard directory and tallying entry count, total bytes, and the
-    /// oldest/newest `modified` timestamp.
-    pub fn stats(&self) -> StoreResult<Stats> {
-        let mut stats = Stats::default();
-        if !self.root.is_dir() {
-            return Ok(stats);
-        }
-        for shard in std::fs::read_dir(&self.root).map_err(|source| StoreError::Io {
-            path: self.root.clone(),
-            source,
-        })? {
-            let shard = shard.map_err(|source| StoreError::Io {
-                path: self.root.clone(),
-                source,
-            })?;
-            if !shard.file_type().ok().is_some_and(|t| t.is_dir()) {
-                continue;
-            }
-            for entry in std::fs::read_dir(shard.path()).map_err(|source| StoreError::Io {
-                path: shard.path(),
-                source,
-            })? {
-                let entry = entry.map_err(|source| StoreError::Io {
-                    path: shard.path(),
-                    source,
-                })?;
-                let meta = entry.metadata().map_err(|source| StoreError::Io {
-                    path: entry.path(),
-                    source,
-                })?;
-                stats.entries += 1;
-                stats.total_bytes += meta.len();
-                let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-                stats.oldest = Some(match stats.oldest {
-                    Some(t) if t < modified => t,
-                    _ => modified,
-                });
-                stats.newest = Some(match stats.newest {
-                    Some(t) if t > modified => t,
-                    _ => modified,
-                });
-            }
-        }
-        Ok(stats)
-    }
-
-    /// Remove every cache entry. Returns the number of files deleted.
-    pub fn clear(&self) -> StoreResult<usize> {
-        if !self.root.is_dir() {
-            return Ok(0);
-        }
-        let mut removed = 0usize;
         for shard in std::fs::read_dir(&self.root).map_err(|source| StoreError::Io {
             path: self.root.clone(),
             source,
@@ -327,13 +247,68 @@ impl Store {
                     path: shard_path.clone(),
                     source,
                 })?;
-                std::fs::remove_file(entry.path()).map_err(|source| StoreError::Io {
-                    path: entry.path(),
-                    source,
-                })?;
-                removed += 1;
+                f(&entry)?;
             }
         }
+        Ok(())
+    }
+
+    /// Return the total number of entries currently in the store.
+    /// Walks the on-disk tree — O(entries). Fine for `cache stats`
+    /// on reasonable cache sizes; a future phase can add a stats
+    /// sidecar if this ever shows up in a profile.
+    pub fn len(&self) -> StoreResult<usize> {
+        let mut count = 0usize;
+        self.for_each_entry(|_| {
+            count += 1;
+            Ok(())
+        })?;
+        Ok(count)
+    }
+
+    /// Absolute root directory for this store.
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Aggregate the store into a [`Stats`] snapshot by walking every
+    /// shard directory and tallying entry count, total bytes, and the
+    /// oldest/newest `modified` timestamp.
+    pub fn stats(&self) -> StoreResult<Stats> {
+        let mut stats = Stats::default();
+        self.for_each_entry(|entry| {
+            let meta = entry.metadata().map_err(|source| StoreError::Io {
+                path: entry.path(),
+                source,
+            })?;
+            stats.entries += 1;
+            stats.total_bytes += meta.len();
+            let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+            stats.oldest = Some(match stats.oldest {
+                Some(t) if t < modified => t,
+                _ => modified,
+            });
+            stats.newest = Some(match stats.newest {
+                Some(t) if t > modified => t,
+                _ => modified,
+            });
+            Ok(())
+        })?;
+        Ok(stats)
+    }
+
+    /// Remove every cache entry. Returns the number of files deleted.
+    pub fn clear(&self) -> StoreResult<usize> {
+        let mut removed = 0usize;
+        self.for_each_entry(|entry| {
+            std::fs::remove_file(entry.path()).map_err(|source| StoreError::Io {
+                path: entry.path(),
+                source,
+            })?;
+            removed += 1;
+            Ok(())
+        })?;
         Ok(removed)
     }
 
@@ -342,39 +317,18 @@ impl Store {
     /// remediation; `verify` itself doesn't repair anything.
     pub fn verify(&self) -> StoreResult<Vec<PathBuf>> {
         let mut corrupt = Vec::new();
-        if !self.root.is_dir() {
-            return Ok(corrupt);
-        }
-        for shard in std::fs::read_dir(&self.root).map_err(|source| StoreError::Io {
-            path: self.root.clone(),
-            source,
-        })? {
-            let shard = shard.map_err(|source| StoreError::Io {
-                path: self.root.clone(),
-                source,
-            })?;
-            if !shard.file_type().ok().is_some_and(|t| t.is_dir()) {
-                continue;
-            }
-            for entry in std::fs::read_dir(shard.path()).map_err(|source| StoreError::Io {
-                path: shard.path(),
-                source,
-            })? {
-                let entry = entry.map_err(|source| StoreError::Io {
-                    path: shard.path(),
-                    source,
-                })?;
-                let path = entry.path();
-                match std::fs::read(&path) {
-                    Ok(bytes) => {
-                        if serde_json::from_slice::<CachedResult>(&bytes).is_err() {
-                            corrupt.push(path);
-                        }
+        self.for_each_entry(|entry| {
+            let path = entry.path();
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    if serde_json::from_slice::<CachedResult>(&bytes).is_err() {
+                        corrupt.push(path);
                     }
-                    Err(_) => corrupt.push(path),
                 }
+                Err(_) => corrupt.push(path),
             }
-        }
+            Ok(())
+        })?;
         Ok(corrupt)
     }
 }
