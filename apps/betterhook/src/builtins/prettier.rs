@@ -13,8 +13,7 @@
 //! We pick out `[warn] <path>` lines whose path looks like a file (not
 //! the trailing summary sentence).
 
-use crate::runner::output::DiagnosticSeverity;
-
+use super::common::parse_file_list;
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
 
 #[must_use]
@@ -38,25 +37,13 @@ pub fn meta() -> BuiltinMeta {
 
 #[must_use]
 pub fn parse_output(stdout: &str) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    for raw in stdout.lines() {
-        let line = raw.trim();
-        let Some(rest) = line.strip_prefix("[warn] ") else {
-            continue;
-        };
-        if rest.starts_with("Code style issues") || rest.starts_with("All matched files") {
-            continue;
-        }
-        out.push(Diagnostic {
-            file: rest.to_owned(),
-            line: None,
-            column: None,
-            severity: DiagnosticSeverity::Warning,
-            message: "formatting drift — run `prettier --write` to fix".to_owned(),
-            rule: Some("prettier".to_owned()),
-        });
-    }
-    out
+    parse_file_list(
+        stdout,
+        "[warn] ",
+        &["Code style issues", "All matched files"],
+        "formatting drift — run `prettier --write` to fix",
+        "prettier",
+    )
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ use serde_json::Value;
 
 use crate::runner::output::DiagnosticSeverity;
 
+use super::common::severity_from_level;
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
 
 #[must_use]
@@ -33,15 +34,6 @@ pub fn meta() -> BuiltinMeta {
         network: false,
         concurrent_safe: true,
         tool_binary: "shellcheck",
-    }
-}
-
-fn severity_from_str(s: &str) -> DiagnosticSeverity {
-    match s.to_ascii_lowercase().as_str() {
-        "error" => DiagnosticSeverity::Error,
-        "warning" => DiagnosticSeverity::Warning,
-        "info" => DiagnosticSeverity::Info,
-        _ => DiagnosticSeverity::Hint,
     }
 }
 
@@ -68,7 +60,7 @@ pub fn parse_output(stdout: &str) -> Vec<Diagnostic> {
         let severity = item
             .get("level")
             .and_then(Value::as_str)
-            .map_or(DiagnosticSeverity::Warning, severity_from_str);
+            .map_or(DiagnosticSeverity::Warning, severity_from_level);
         let message = item
             .get("message")
             .and_then(Value::as_str)

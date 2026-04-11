@@ -5,8 +5,7 @@
 //! file on stderr, followed by a summary line. We look for the
 //! `would reformat ` prefix and turn each match into one diagnostic.
 
-use crate::runner::output::DiagnosticSeverity;
-
+use super::common::parse_file_list;
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
 
 #[must_use]
@@ -27,22 +26,13 @@ pub fn meta() -> BuiltinMeta {
 
 #[must_use]
 pub fn parse_output(stdout_or_stderr: &str) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    for raw in stdout_or_stderr.lines() {
-        let line = raw.trim();
-        let Some(path) = line.strip_prefix("would reformat ") else {
-            continue;
-        };
-        out.push(Diagnostic {
-            file: path.to_owned(),
-            line: None,
-            column: None,
-            severity: DiagnosticSeverity::Warning,
-            message: "formatting drift — run `black` to fix".to_owned(),
-            rule: Some("black".to_owned()),
-        });
-    }
-    out
+    parse_file_list(
+        stdout_or_stderr,
+        "would reformat ",
+        &[],
+        "formatting drift — run `black` to fix",
+        "black",
+    )
 }
 
 #[cfg(test)]

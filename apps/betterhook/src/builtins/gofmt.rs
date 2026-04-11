@@ -4,8 +4,7 @@
 //! `gofmt -l <files>` prints one path per line for any file that would
 //! be changed by `gofmt -w`, so the parser is a trimmed-line filter.
 
-use crate::runner::output::DiagnosticSeverity;
-
+use super::common::parse_file_list;
 use super::{BuiltinId, BuiltinMeta, Diagnostic};
 
 #[must_use]
@@ -26,22 +25,13 @@ pub fn meta() -> BuiltinMeta {
 
 #[must_use]
 pub fn parse_output(stdout: &str) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    for raw in stdout.lines() {
-        let path = raw.trim();
-        if path.is_empty() {
-            continue;
-        }
-        out.push(Diagnostic {
-            file: path.to_owned(),
-            line: None,
-            column: None,
-            severity: DiagnosticSeverity::Warning,
-            message: "formatting drift — run `gofmt -w` to fix".to_owned(),
-            rule: Some("gofmt".to_owned()),
-        });
-    }
-    out
+    parse_file_list(
+        stdout,
+        "",
+        &[],
+        "formatting drift — run `gofmt -w` to fix",
+        "gofmt",
+    )
 }
 
 #[cfg(test)]

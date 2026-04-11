@@ -22,6 +22,7 @@ use crate::runner::output::DiagnosticSeverity;
 pub mod biome;
 pub mod black;
 pub mod clippy;
+pub mod common;
 pub mod eslint;
 pub mod gitleaks;
 pub mod gofmt;
