@@ -42,7 +42,12 @@ pub async fn run_command(
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // Essential for parallel fail_fast: if this task is aborted
+        // (because a sibling job failed and the scheduler called
+        // `set.abort_all()`), the child process gets SIGKILL on drop
+        // instead of outliving its parent.
+        .kill_on_drop(true);
     for (k, v) in env {
         command.env(k, v);
     }
