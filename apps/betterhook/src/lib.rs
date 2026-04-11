@@ -4,6 +4,7 @@
 //! This crate is the implementation library. The `betterhook` CLI binary lives
 //! in the sibling `apps/cli` crate and depends on this one.
 
+pub mod builtins;
 pub mod cache;
 pub mod config;
 pub mod daemon;

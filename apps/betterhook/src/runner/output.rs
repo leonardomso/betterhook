@@ -19,6 +19,18 @@ pub enum Stream {
     Stderr,
 }
 
+/// Severity of a builtin-parsed diagnostic. Mapped from each tool's
+/// native severity set (error/warning/note for clippy, error/warn/info
+/// for eslint, etc.) into a compact shared taxonomy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OutputEvent {
@@ -44,6 +56,19 @@ pub enum OutputEvent {
     JobCacheHit {
         job: String,
         files: usize,
+    },
+    /// Structured diagnostic emitted by a builtin wrapper. Parsed from
+    /// the tool's native output (eslint JSON, clippy JSON, ruff JSON,
+    /// etc.) and forwarded through the same multiplexer as plain
+    /// stdout/stderr lines.
+    Diagnostic {
+        job: String,
+        file: String,
+        line: Option<u32>,
+        column: Option<u32>,
+        severity: DiagnosticSeverity,
+        message: String,
+        rule: Option<String>,
     },
     Summary {
         ok: bool,
@@ -118,6 +143,7 @@ async fn json_writer(mut rx: mpsc::Receiver<OutputEvent>) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn write_event(ev: &OutputEvent) {
     match ev {
         OutputEvent::JobStarted { job, cmd } => {
@@ -171,6 +197,40 @@ fn write_event(ev: &OutputEvent) {
                 "⚡".color(c),
                 job.color(c).bold(),
                 format!("cache hit ({files} files)").dimmed()
+            );
+        }
+        OutputEvent::Diagnostic {
+            job,
+            file,
+            line,
+            column,
+            severity,
+            message,
+            rule,
+        } => {
+            let c = color_for(job);
+            let sev = match severity {
+                DiagnosticSeverity::Error => "error".red().bold().to_string(),
+                DiagnosticSeverity::Warning => "warn".yellow().bold().to_string(),
+                DiagnosticSeverity::Info => "info".blue().bold().to_string(),
+                DiagnosticSeverity::Hint => "hint".cyan().to_string(),
+            };
+            let loc = match (line, column) {
+                (Some(l), Some(col)) => format!("{file}:{l}:{col}"),
+                (Some(l), None) => format!("{file}:{l}"),
+                _ => file.clone(),
+            };
+            let rule_tag = rule
+                .as_ref()
+                .map(|r| format!(" [{r}]"))
+                .unwrap_or_default();
+            eprintln!(
+                "[{}] {} {}{} {}",
+                job.color(c).bold(),
+                sev,
+                loc,
+                rule_tag,
+                message
             );
         }
         OutputEvent::Summary {
