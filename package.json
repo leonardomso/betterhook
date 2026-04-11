@@ -8,6 +8,8 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "bench": "turbo run bench",
+    "docs:dev": "turbo run dev --filter=@betterhook/docs",
+    "docs:check": "turbo run check --filter=@betterhook/docs",
     "fmt": "cargo fmt --all",
     "fmt:check": "cargo fmt --all -- --check"
   },

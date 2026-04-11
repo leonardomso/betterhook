@@ -1,0 +1,77 @@
+---
+title: "Why betterhook"
+description: "A side-by-side comparison with lefthook, husky, and pre-commit."
+icon: "scale"
+---
+
+## The motivation
+
+Multiple coding agents, each in a separate git worktree, each running its own pre-commit hook.
+lefthook's worktree bugs, buffered output, and lack of tool coordination make this workload
+unstable. betterhook is a ground-up rewrite with the parallel-worktree problem as its first-class
+design constraint.
+
+## Feature comparison
+
+|                                               | **betterhook** | lefthook    | husky    | pre-commit |
+|-----------------------------------------------|:--------------:|:-----------:|:--------:|:----------:|
+| Worktree-aware install                        | ✓              | ✗           | ✗        | ✗          |
+| Line-streaming subprocess output              | ✓              | buffered    | partial  | buffered   |
+| Priority-ordered parallel scheduler           | ✓              | ✗ (#846)    | —        | —          |
+| Cross-worktree tool coordinator               | ✓ (opt-in)     | ✗           | ✗        | ✗          |
+| Automatic `CARGO_TARGET_DIR` per worktree     | ✓              | ✗           | ✗        | ✗          |
+| Untracked-file stash safety                   | ✓              | broken (#833)| ✗       | via script |
+| NDJSON output for agents                      | ✓              | ✗           | ✗        | ✗          |
+| Multi-format config (TOML / YAML / JSON)      | ✓              | YAML only   | JS only  | YAML only  |
+| Binary size                                   | ~6 MB          | ~15 MB      | (node)   | (python)   |
+| Cold start                                    | ~50 ms         | ~100 ms     | slower   | slowest    |
+| Runtime required                              | none           | none        | Node.js  | Python     |
+
+## The lefthook bugs betterhook fixes
+
+<AccordionGroup>
+  <Accordion title="Issue #901 — install fails in linked worktrees" icon="bug">
+    [evilmartians/lefthook#901](https://github.com/evilmartians/lefthook/issues/901). lefthook's installer conflates `$GIT_DIR` with the shared `$GIT_COMMON_DIR` and errors with exit 128.
+
+    **betterhook**: Install runs from any worktree. The wrapper lives in the shared common dir, and the runtime dispatch uses `git rev-parse --show-toplevel` to find the actual current worktree.
+  </Accordion>
+  <Accordion title="Issue #962 — remote config clone corrupts the index" icon="bug">
+    [#962](https://github.com/evilmartians/lefthook/issues/962). Cloning a remote lefthook config from inside a worktree corrupts `.git/index`.
+
+    **betterhook**: Remote configs (when shipped in v0.3) clone into `$XDG_CACHE_HOME/betterhook/remotes/` with mandatory SHA pinning — never into the repo's own index.
+  </Accordion>
+  <Accordion title="Issue #1265 — GIT_DIR env pollution" icon="bug">
+    [#1265](https://github.com/evilmartians/lefthook/issues/1265). lefthook inherits `$GIT_DIR` from git's hook invocation and leaks it into tool subprocesses.
+
+    **betterhook**: Every subprocess shell out to git uses `--absolute-git-dir` or passes the worktree explicitly; we never rely on the ambient env.
+  </Accordion>
+  <Accordion title="Issue #846 — parallel: true ignores priority" icon="bug">
+    [#846](https://github.com/evilmartians/lefthook/issues/846). Lefthook's parallel scheduler is FIFO; the `priority` key has no effect under contention.
+
+    **betterhook**: Jobs are lowered into priority order at config-load time and spawned in that order against a bounded tokio Semaphore.
+  </Accordion>
+  <Accordion title="Issue #833 — untracked files trip formatters" icon="bug">
+    [#833](https://github.com/evilmartians/lefthook/issues/833). Pre-commit hooks see untracked files in the working tree even though they're not part of the commit.
+
+    **betterhook**: `StashGuard` pushes `--include-untracked --keep-index` with a unique message, verifies the top-of-stack matches our message before popping, and never silently clobbers another tool's stash.
+  </Accordion>
+  <Accordion title="Discussion #764 — 100× slowdown in v1.6.18" icon="bug">
+    [#764](https://github.com/evilmartians/lefthook/discussions/764). A 0.1s hook started taking 10s after lefthook's v1.6.18 release.
+
+    **betterhook**: Criterion benches gate every release. See the [performance page](/reference/performance).
+  </Accordion>
+</AccordionGroup>
+
+## When you should still use lefthook
+
+betterhook is not a drop-in replacement for every scenario. **Use lefthook if:**
+
+- You're a single developer working in a single worktree — lefthook's quirks never bite you and its community is larger.
+- You depend on `templates`, `remotes`, or lefthook's YAML-specific DSL features.
+- You can't switch to Rust tooling at this layer of your stack.
+
+For the parallel-agent workload betterhook was designed around, though, the gap is fundamental.
+
+<Tip>
+  See the full build history and rationale in the [changelog](/changelog).
+</Tip>

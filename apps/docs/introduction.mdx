@@ -1,0 +1,66 @@
+---
+title: "Introduction"
+description: "A fast, memory-tight, worktree-native git hooks manager built for the era of parallel AI coding agents."
+icon: "book-open"
+---
+
+**betterhook** replaces [lefthook](https://lefthook.dev) for teams and tooling where multiple coding agents (Claude Code, Cursor, Codex, Aider, …) run in parallel via [Conductor](https://conductor.build) or similar harnesses, each in its own git worktree.
+
+It's a single static Rust binary:
+
+- **~6 MB stripped**, **~50 ms cold start**
+- **Line-streaming subprocess I/O** via Tokio — output is live, memory is constant
+- **Worktree-native dispatch**: one wrapper in the shared `.git/hooks/` dir resolves the current worktree at commit time and loads *its* config
+- **Opt-in coordinator daemon** (`betterhookd`) that serializes tool conflicts across worktrees
+- **Agent-first**: NDJSON output, machine-readable status, stable exit codes, a `fix` subcommand for self-correction
+
+```sh
+betterhook init           # scaffold betterhook.toml
+betterhook install        # install worktree-aware wrappers
+git commit -am "go"       # your hooks run, correctly, per-worktree
+```
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Go from zero to a working pre-commit hook in 60 seconds.
+  </Card>
+  <Card title="Why betterhook" icon="scale" href="/why-betterhook">
+    A side-by-side comparison with lefthook, husky, and pre-commit.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/essentials/configuration">
+    The full `betterhook.toml` reference with realistic examples.
+  </Card>
+  <Card title="Agent integration" icon="bot" href="/agents/overview">
+    NDJSON output, self-correction loops, Conductor integration.
+  </Card>
+</CardGroup>
+
+## The problem
+
+The workflow most teams are moving to: multiple coding agents running in parallel, each on its own branch in a separate git worktree, each opening its own PR. Every agent's pre-commit hook runs formatters, linters, and tests. **Today they trip over each other.**
+
+<AccordionGroup>
+  <Accordion title="lefthook install fails in linked worktrees">
+    Installing from anywhere other than the primary worktree errors with exit 128. See [evilmartians/lefthook#901](https://github.com/evilmartians/lefthook/issues/901).
+  </Accordion>
+  <Accordion title="Go's os/exec buffers entire subprocess output in memory">
+    Under 4 agents × N parallel jobs across 4 worktrees, lefthook regularly OOMs.
+  </Accordion>
+  <Accordion title="parallel: true silently ignores priority ordering">
+    There's no way to make high-priority checks run first under contention. See [#846](https://github.com/evilmartians/lefthook/issues/846).
+  </Accordion>
+  <Accordion title="Untracked files trip formatter hooks">
+    Formatters see files that aren't part of the commit and flag them as false positives. See [#833](https://github.com/evilmartians/lefthook/issues/833).
+  </Accordion>
+  <Accordion title="ESLint cache, cargo target/, prettier on lockfiles">
+    All corrupt under concurrent worktree runs. No tool today coordinates them.
+  </Accordion>
+</AccordionGroup>
+
+## The solution
+
+betterhook is a ground-up rewrite in Rust with the worktree problem as its first-class design constraint. [Read why](/why-betterhook) or [jump straight to the quickstart](/quickstart).
+
+<Note>
+betterhook is in active development. The v0.0.1 release is ready for in-repo dogfooding; see the [changelog](/changelog) for known gaps.
+</Note>

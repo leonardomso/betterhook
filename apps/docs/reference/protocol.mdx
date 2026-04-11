@@ -1,0 +1,169 @@
+---
+title: "Wire protocol"
+description: "The betterhookd IPC wire format for third-party harness integration."
+icon: "network"
+---
+
+The `betterhookd` coordinator daemon speaks a tiny length-prefixed bincode
+protocol over a Unix domain socket. This page is the normative reference
+for third-party agent harnesses (Conductor, Cursor, Codex, Aider, ...)
+that want to integrate directly instead of going through the bundled
+`betterhook` CLI.
+
+## Transport
+
+- **Socket path**: `<git-common-dir>/betterhook/sock`. On macOS, if that path would exceed the 104-character Unix socket limit, the daemon falls back to `/tmp/bh-<sha8>.sock` and writes the chosen path into `<git-common-dir>/betterhook/sockpath`.
+- **Discovery env var**: `BETTERHOOK_DAEMON_SOCK`. If set, clients skip auto-discovery and connect to the value directly.
+- **Framing**: big-endian length-prefixed via `tokio_util::codec::LengthDelimitedCodec` with `length_field_length = 4`.
+- **Encoding**: [`bincode` v2](https://docs.rs/bincode) with `bincode::config::standard()` and the `serde` integration.
+- **Protocol version**: see `PROTOCOL_VERSION` in `apps/betterhook/src/lock/protocol.rs`. Currently `1`.
+
+## Lifecycle
+
+<Steps>
+  <Step title="Client connects">
+    Opens a Unix stream socket to the discovered path.
+  </Step>
+  <Step title="Hello handshake">
+    Client sends `Hello { client_version }`. Server replies
+    `Hello { server_version }`. A mismatching major version is an
+    immediate abort on the client side.
+  </Step>
+  <Step title="Acquire / Release / Status / Ping">
+    Each request gets exactly one response. Framing is recoverable — a
+    malformed body returns `Error { message }` on the current frame and
+    the connection continues.
+  </Step>
+  <Step title="Client disconnects">
+    The daemon drops every permit the connection held (explicitly released
+    or implicitly held via the per-connection HashMap) and decrements the
+    active-connection count.
+  </Step>
+  <Step title="Idle linger + exit">
+    When the active count hits 0 and 60 s pass without a new connection,
+    the daemon exits and removes the socket file.
+  </Step>
+</Steps>
+
+## Request types
+
+```rust
+enum Request {
+    Hello { client_version: u32 },
+    Acquire { key: LockKey, timeout_ms: u64 },
+    Release { token: u64 },
+    Status,
+    Ping,
+}
+
+struct LockKey {
+    scope: Scope,       // "tool" | "tool_path"
+    name: String,       // opaque identifier; see key derivation below
+    permits: u32,       // capacity hint; 1 = mutex, N = sharded
+}
+
+enum Scope { Tool, ToolPath }
+```
+
+### Key derivation from IsolateSpec
+
+| `IsolateSpec` variant                              | `key.name`                         | `permits` |
+|---------------------------------------------------|------------------------------------|-----------|
+| `Tool { name }`                                   | `tool:<name>`                      | 1         |
+| `Sharded { name, slots }`                         | `sharded:<name>`                   | `slots`   |
+| `ToolPath { tool, PerWorktree }`                  | `tool-path:<tool>:<worktree>`      | 1         |
+| `ToolPath { tool, Path(p) }`                      | `tool-path:<tool>:<p>`             | 1         |
+
+Per-worktree keys always have `permits = 1` because each worktree gets a
+distinct key; contention only happens if two things inside the same
+worktree race.
+
+## Response types
+
+```rust
+enum Response {
+    Hello { server_version: u32 },
+    Granted { token: u64 },
+    Timeout,
+    Released,
+    Pong,
+    Status { locks: Vec<LockStatus> },
+    Error { message: String },
+}
+
+struct LockStatus {
+    key: LockKey,
+    active_permits: u32,
+    waiters: u32,
+}
+```
+
+## Semantics
+
+<AccordionGroup>
+  <Accordion title="Acquire { key, timeout_ms }" icon="lock">
+    Blocks until a permit on `key` is free, or `timeout_ms` elapses. The
+    daemon lazily creates the semaphore on first acquire, using
+    `key.permits` as its capacity. Subsequent acquires may pass any
+    permits value — the first caller wins capacity assignment.
+
+    On success: `Response::Granted { token }` where `token` is a monotonic
+    per-daemon counter the client must retain for explicit Release.
+
+    On timeout: `Response::Timeout`. No token returned.
+  </Accordion>
+
+  <Accordion title="Release { token }" icon="lock-open">
+    Drops exactly one held permit by token. Idempotent — an unknown token
+    is a no-op that still returns `Released`. Connection drop releases
+    every token the connection held.
+  </Accordion>
+
+  <Accordion title="Status" icon="activity">
+    Returns every live `LockKey` with `active_permits` (permits currently
+    held) and `waiters` (reserved for future phases).
+  </Accordion>
+
+  <Accordion title="Ping / Hello" icon="heart-pulse">
+    Liveness and version handshake. Clients use `Ping` after spawn-retry
+    to verify the daemon is alive; `Hello` is the version gate.
+  </Accordion>
+</AccordionGroup>
+
+## Example client (Python)
+
+```python
+import os, socket, struct
+
+SOCK = os.environ.get(
+    "BETTERHOOK_DAEMON_SOCK",
+    os.path.join(".git", "betterhook", "sock"),
+)
+
+def send(sock, frame: bytes):
+    sock.send(struct.pack(">I", len(frame)) + frame)
+
+def recv(sock) -> bytes:
+    (n,) = struct.unpack(">I", sock.recv(4))
+    return sock.recv(n)
+
+# Bincode-encoded bodies. Use a bincode binding (e.g. `bincode2-py`)
+# or regenerate the wire format from the Rust sources.
+```
+
+## Stability
+
+<Check>`PROTOCOL_VERSION` is bumped for any backwards-incompatible change.</Check>
+<Check>Additive changes (new Request or Response variants) may land without a bump — existing variants keep their tags and layouts.</Check>
+<Check>Breaking changes always ship alongside a documented upgrade path in [the changelog](/changelog).</Check>
+
+## Fallback
+
+If the daemon is unreachable and spawn fails, the betterhook client falls
+back to `fs4` advisory flock on `<common-dir>/betterhook/locks/<key>.lock`.
+This loses sharded capacity (every lock becomes a mutex), RW support,
+and Status introspection, but mutex semantics are preserved.
+
+Setting `BETTERHOOK_NO_LOCKS=1` (or `--no-locks` on the CLI) bypasses
+both the daemon and the flock fallback. Jobs with `isolate` run unlocked
+with a stderr warning.

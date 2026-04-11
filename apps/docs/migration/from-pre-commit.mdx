@@ -1,0 +1,69 @@
+---
+title: "From pre-commit"
+description: "Move from .pre-commit-config.yaml to betterhook.toml."
+icon: "arrow-right"
+---
+
+[`pre-commit`](https://pre-commit.com) (the Python tool) organizes hooks
+as "repos" that provide their own executables. betterhook's model is
+simpler: every job is a shell command you already have installed.
+
+<Steps>
+  <Step title="Inspect your pre-commit config">
+    ```sh
+    cat .pre-commit-config.yaml
+    ```
+    Note each repo's `id` (e.g. `ruff`, `black`, `prettier`).
+  </Step>
+  <Step title="Install the underlying tools directly">
+    Instead of going through pre-commit's virtualenvs, install the tools
+    at the system or project level:
+    ```sh
+    # Python example
+    uv tool install ruff
+    uv tool install black
+    ```
+  </Step>
+  <Step title="Scaffold betterhook">
+    ```sh
+    betterhook init
+    ```
+  </Step>
+  <Step title="Translate each hook">
+    ```yaml
+    # .pre-commit-config.yaml
+    repos:
+      - repo: https://github.com/astral-sh/ruff-pre-commit
+        rev: v0.6.0
+        hooks:
+          - id: ruff
+            args: [--fix]
+    ```
+
+    becomes:
+
+    ```toml
+    # betterhook.toml
+    [hooks.pre-commit.jobs.ruff]
+    run = "ruff check {staged_files}"
+    fix = "ruff check --fix {files}"
+    glob = ["*.py"]
+    stage_fixed = true
+    isolate = "ruff"
+    ```
+  </Step>
+  <Step title="Install and take over">
+    ```sh
+    betterhook install --takeover
+    rm .pre-commit-config.yaml
+    pre-commit uninstall || true
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  pre-commit's main selling point is its ecosystem of pre-packaged
+  hooks. If you depend on that ecosystem heavily, consider keeping
+  pre-commit for now and revisiting once betterhook has a comparable
+  set of built-in recipes.
+</Note>

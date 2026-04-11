@@ -1,0 +1,150 @@
+---
+title: "Configuration"
+description: "Every field of betterhook.toml with realistic examples."
+icon: "sliders"
+---
+
+betterhook's config lives at `betterhook.toml` at your repo root. You can also use
+`betterhook.yml`, `betterhook.yaml`, or `betterhook.json` — all three parse into
+the same internal AST. See [formats](/essentials/formats) for the details.
+
+## Full example
+
+```toml
+[meta]
+version = 1
+min_betterhook = ">= 0.0.1"
+
+[hooks.pre-commit]
+parallel = true
+fail_fast = false
+priority = ["fmt", "lint", "test"]
+stash_untracked = true            # default true for pre-commit
+
+[hooks.pre-commit.jobs.fmt]
+run = "prettier --write {staged_files}"
+fix = "prettier --write {files}"  # betterhook fix uses this variant
+glob = ["*.ts", "*.tsx", "*.css"]
+exclude = ["**/*.gen.ts"]
+stage_fixed = true
+isolate = "prettier"
+timeout = "60s"
+env = { NODE_ENV = "production" }
+
+[hooks.pre-commit.jobs.lint]
+run = "eslint --cache --fix {staged_files}"
+glob = ["*.ts", "*.tsx"]
+isolate = "eslint"
+
+[hooks.pre-commit.jobs.test]
+run = "cargo test --quiet"
+isolate = { tool = "cargo", target_dir = "per-worktree" }
+timeout = "5m"
+
+[hooks.pre-push.jobs.audit]
+run = "cargo audit"
+
+extends = ["./.betterhook/base.toml"]
+```
+
+## Schema reference
+
+### `[meta]`
+
+<ParamField path="meta.version" type="integer" default="1">
+  Schema version. Bumped when betterhook makes a breaking config change.
+</ParamField>
+<ParamField path="meta.min_betterhook" type="string">
+  Minimum betterhook version required, as a [semver requirement](https://docs.rs/semver/latest/semver/struct.VersionReq.html) (e.g. `">= 0.1, < 0.2"`).
+</ParamField>
+
+### `[hooks.<name>]`
+
+Any [git hook name](https://git-scm.com/docs/githooks) is valid as `<name>`.
+
+<ParamField path="parallel" type="boolean" default="false">
+  Run the hook's jobs concurrently. Default: sequential.
+</ParamField>
+<ParamField path="fail_fast" type="boolean" default="false">
+  Abort remaining jobs on the first failure. Works in both sequential and parallel modes.
+</ParamField>
+<ParamField path="parallel_limit" type="integer">
+  Maximum concurrent jobs when `parallel = true`. Defaults to `std::thread::available_parallelism()`.
+</ParamField>
+<ParamField path="priority" type="array of strings">
+  Job names in priority order. Earlier entries are dispatched first under contention. Jobs not named here run after the named ones.
+</ParamField>
+<ParamField path="stash_untracked" type="boolean" default="true (for pre-commit only)">
+  Push untracked and unstaged changes into a betterhook-owned stash before the first job, pop it after the last one.
+</ParamField>
+
+### `[hooks.<hook>.jobs.<name>]`
+
+<ParamField path="run" type="string" required>
+  The shell command to execute. Run through `sh -c`. Supports [template variables](/essentials/templates).
+</ParamField>
+<ParamField path="fix" type="string">
+  A "fix" variant of `run` used by `betterhook fix`. Typically a `--fix` / `--write` version of the same command.
+</ParamField>
+<ParamField path="glob" type="array of strings">
+  Include filter applied to the job's file list. Uses `globset` syntax.
+</ParamField>
+<ParamField path="exclude" type="array of strings">
+  Exclude filter applied after `glob`.
+</ParamField>
+<ParamField path="tags" type="array of strings">
+  Arbitrary tags for filtering in future phases. Not yet used.
+</ParamField>
+<ParamField path="skip" type="string">
+  If set (and truthy), skip the job. Shell-style condition. Future phases will support full eval.
+</ParamField>
+<ParamField path="only" type="string">
+  If set and **not** truthy, skip the job.
+</ParamField>
+<ParamField path="env" type="table of string → string">
+  Extra environment variables to export into the job's process. Merged with the inherited env.
+</ParamField>
+<ParamField path="root" type="string">
+  Working directory for the job, relative to the worktree root. Defaults to the worktree root itself.
+</ParamField>
+<ParamField path="stage_fixed" type="boolean" default="false">
+  If the job modifies any unstaged files, re-add them so the new content makes it into the commit.
+</ParamField>
+<ParamField path="isolate" type="string or table">
+  Declare a coordinator lock for this job. See [Isolation](/essentials/isolation).
+</ParamField>
+<ParamField path="timeout" type="humantime string">
+  Per-job timeout like `"30s"` or `"1m30s"`. On expiry the child is SIGKILLed and the job reports exit 124.
+</ParamField>
+<ParamField path="interactive" type="boolean" default="false">
+  Disable stage_fixed for this job (for TUI commands).
+</ParamField>
+<ParamField path="fail_text" type="string">
+  Extra error text to print when the job fails.
+</ParamField>
+
+## Local overrides
+
+Create `betterhook.local.{toml,yml,yaml,json}` next to your main config. It's
+gitignored and merged on top with the highest precedence. Typical uses:
+
+- Bump a slow timeout on your machine
+- Skip a job that needs tooling you don't have
+- Point `isolate` at a custom socket
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Templates" icon="file-code" href="/essentials/templates">
+    `{staged_files}`, `{all_files}`, and the glob pipeline.
+  </Card>
+  <Card title="Isolation" icon="lock" href="/essentials/isolation">
+    Tool mutexes, sharded semaphores, per-worktree target dirs.
+  </Card>
+  <Card title="Extends" icon="git-merge" href="/essentials/extends">
+    Share a base config across repos; layer a per-machine override.
+  </Card>
+  <Card title="Formats" icon="code" href="/essentials/formats">
+    TOML vs YAML vs JSON — pick any, they all work.
+  </Card>
+</CardGroup>

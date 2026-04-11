@@ -1,0 +1,136 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "betterhook",
+  "description": "Memory-efficient, worktree-native git hooks manager built for the AI agent era.",
+  "theme": "mint",
+  "colors": {
+    "primary": "#E35A16",
+    "light": "#F5814A",
+    "dark": "#C44611"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": "/favicon.svg",
+  "appearance": {
+    "default": "system",
+    "strict": false
+  },
+  "fonts": {
+    "headings": "Inter",
+    "body": "Inter"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Issues",
+        "href": "https://github.com/leonardomso/betterhook/issues"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "GitHub",
+      "href": "https://github.com/leonardomso/betterhook"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "why-betterhook"
+            ]
+          },
+          {
+            "group": "Essentials",
+            "pages": [
+              "essentials/installation",
+              "essentials/configuration",
+              "essentials/templates",
+              "essentials/isolation",
+              "essentials/extends",
+              "essentials/formats"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "commands/overview",
+              "commands/init",
+              "commands/install",
+              "commands/uninstall",
+              "commands/run",
+              "commands/status",
+              "commands/explain",
+              "commands/fix",
+              "commands/migrate"
+            ]
+          },
+          {
+            "group": "Agent integration",
+            "pages": [
+              "agents/overview",
+              "agents/ndjson",
+              "agents/self-correction",
+              "agents/conductor"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/worktree-model",
+              "architecture/runner",
+              "architecture/daemon"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/from-lefthook",
+              "migration/from-husky",
+              "migration/from-pre-commit"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/exit-codes",
+              "reference/env-vars",
+              "reference/protocol",
+              "reference/performance"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Changelog",
+        "groups": [
+          {
+            "group": "Releases",
+            "pages": ["changelog"]
+          }
+        ]
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/leonardomso/betterhook"
+    }
+  }
+}

@@ -1,0 +1,84 @@
+---
+title: "Performance targets"
+description: "The numbers betterhook measures every release against."
+icon: "zap"
+---
+
+betterhook has documented performance targets tracked by criterion benches
+on every CI run. Regressions greater than 10% fail the build.
+
+## Targets
+
+| Metric                                      | Target                                 |
+|----------------------------------------------|----------------------------------------|
+| Cold start `betterhook --version`            | `< 30 ms`                              |
+| Cold start `run pre-commit` (no-op config)   | `< 50 ms`                              |
+| Daemon idle RSS                              | `< 8 MB`                               |
+| Peak runner RSS for 8 parallel jobs          | `< 30 MB` (excluding subprocess RSS)    |
+| Wrapper overhead per hook fire               | `< 5 ms`                               |
+| Stripped binary size (macOS arm64)           | `< 6 MB`                               |
+| 8 worktrees committing concurrently          | Linear scaling, no quadratic RSS       |
+| Output multiplexer overhead                  | `< 1 µs/line`                          |
+
+## Why these numbers
+
+<AccordionGroup>
+  <Accordion title="Cold start < 50 ms" icon="rocket">
+    The wrapper fires every time you run `git commit`. A slow cold start
+    turns into compounding friction — 50 ms × 20 commits/day per agent × 4
+    agents is already measurable. Our hard floor: **the wrapper overhead
+    must be imperceptible to humans and invisible to CI.**
+  </Accordion>
+
+  <Accordion title="Daemon idle RSS < 8 MB" icon="server">
+    Conductor users might have 10 repos with betterhookd running in each.
+    8 MB × 10 = 80 MB total — small enough to not show up in a monitoring
+    dashboard. Anything larger and the daemon becomes noisy.
+  </Accordion>
+
+  <Accordion title="Runner RSS < 30 MB for 8 parallel jobs" icon="layers">
+    This is the headline lefthook fix: Go's `os/exec` buffers entire
+    subprocess output in memory, so a chatty parallel lint run can trivially
+    consume hundreds of MB. betterhook streams line-by-line through the
+    multiplexer, so memory is O(1) in subprocess output volume.
+  </Accordion>
+
+  <Accordion title="Linear scaling across worktrees" icon="trending-up">
+    N worktrees committing concurrently should take O(N) total time, not
+    O(N²). This is what forces us to serialize only the *actual* shared
+    resources (`.git/index`, tool caches) and let everything else run in
+    parallel.
+  </Accordion>
+</AccordionGroup>
+
+## How to measure locally
+
+```sh
+# Run the criterion benches
+cargo run -p xtask -- bench
+
+# Or directly
+cargo bench -p betterhook --bench config_parse
+cargo bench -p betterhook --bench output_multiplexer
+
+# Cold start
+hyperfine --warmup 3 'betterhook --version'
+```
+
+## Current benches
+
+- `config_parse` — TOML and YAML parse; TOML parse + lower
+- `output_multiplexer` — NDJSON per-line serialization cost
+
+More benches land alongside the features they measure.
+
+## Regression gate
+
+CI runs `cargo run -p xtask -- bench` on every push. Any benchmark with a
+runtime more than 10% above its previous baseline fails the build. See
+`.github/workflows/ci.yml` for the exact wiring.
+
+<Note>
+  The baselines are stored in `target/criterion/<bench-name>/base/`
+  locally. CI uses uploaded artifacts from the last green run on `master`.
+</Note>

@@ -1,0 +1,112 @@
+---
+title: "Isolation"
+description: "Tool mutexes, sharded semaphores, and automatic CARGO_TARGET_DIR injection."
+icon: "lock"
+---
+
+When multiple worktrees run the same tool in parallel, things break:
+ESLint cache writes race, prettier corrupts `pnpm-lock.yaml`, cargo builds
+collide on the shared `target/` directory. **Isolation** is betterhook's
+answer — a per-job declaration that tells the coordinator (daemon or
+flock fallback) how to serialize.
+
+## The three shapes
+
+<Tabs>
+  <Tab title="Tool mutex">
+    ```toml
+    [hooks.pre-commit.jobs.lint]
+    run = "eslint --cache --fix {staged_files}"
+    isolate = "eslint"
+    ```
+
+    Shorthand for a **global mutex** named `"eslint"` across every worktree
+    of this repo. Only one eslint runs at a time, anywhere. Fixes
+    `.eslintcache` write races.
+  </Tab>
+  <Tab title="Sharded semaphore">
+    ```toml
+    [hooks.pre-commit.jobs.typecheck]
+    run = "tsc --noEmit"
+    isolate = { name = "tsc", slots = 4 }
+    ```
+
+    Named `"tsc"` semaphore with **4 permits**. Up to 4 concurrent `tsc`
+    runs, anything beyond queues. Useful for memory-heavy tools where
+    parallelism is valuable but unbounded concurrency OOMs the box.
+  </Tab>
+  <Tab title="Per-worktree tool path">
+    ```toml
+    [hooks.pre-commit.jobs.test]
+    run = "cargo test --quiet"
+    isolate = { tool = "cargo", target_dir = "per-worktree" }
+    ```
+
+    Each worktree gets a **distinct lock key** (so they never contend),
+    **and** betterhook auto-injects an environment variable so the tool
+    writes to a per-worktree location. For `cargo`, that's
+    `CARGO_TARGET_DIR=<worktree>/target`.
+  </Tab>
+</Tabs>
+
+## How it works at runtime
+
+When a job with `isolate` is about to run, the runner:
+
+<Steps>
+  <Step title="Derives the lock key">
+    From the `IsolateSpec`:
+    - `"eslint"` → `tool:eslint`, 1 permit
+    - `{ tool = "cargo", target_dir = "per-worktree" }` → `tool-path:cargo:<worktree>`
+    - `{ name = "tsc", slots = 4 }` → `sharded:tsc`, 4 permits
+  </Step>
+  <Step title="Acquires via the coordinator">
+    First tries the daemon socket at `<git-common-dir>/betterhook/sock`. If
+    no daemon is running, spawns one (opt-in, exits after 60s idle).
+  </Step>
+  <Step title="Falls back to flock">
+    If the daemon can't start (sandboxing, permissions), falls back to
+    `fs4` exclusive advisory lock on
+    `<git-common-dir>/betterhook/locks/<key>.lock`. Same mutex semantics,
+    no sharded capacity.
+  </Step>
+  <Step title="Runs the job">
+    Holds the permit for the full duration, including any environment
+    injection (e.g. `CARGO_TARGET_DIR`). Drops on job exit.
+  </Step>
+</Steps>
+
+## When to declare isolation
+
+<CardGroup cols={2}>
+  <Card title="Always" icon="circle-check">
+    Tools with shared caches: **ESLint**, **Prettier**, **TypeScript**, **Ruff**, **mypy**, **Biome**.
+  </Card>
+  <Card title="Always" icon="circle-check">
+    Tools with per-repo target dirs that serialize via their own lockfiles: **cargo**, **rustup**, **pip**, **uv**.
+  </Card>
+  <Card title="Sometimes" icon="circle-help">
+    Heavy compilers you want bounded parallelism for: **tsc**, **webpack**, **vite**, **swc-cli**.
+  </Card>
+  <Card title="Rarely" icon="circle-x">
+    Fast, stateless checks: **yamllint**, **shellcheck**, custom shell scripts. Isolation is overhead for these.
+  </Card>
+</CardGroup>
+
+## Bypass
+
+```sh
+BETTERHOOK_NO_LOCKS=1 betterhook run pre-commit
+# or
+betterhook run pre-commit --no-locks
+```
+
+Runs every job unlocked, with a single stderr warning per isolated job.
+Use sparingly.
+
+## Future: lockfile-guarded locks
+
+Planned for v0.3: `isolate = { tool = "prettier", lockfile_guarded = ["pnpm-lock.yaml"] }` —
+the daemon refuses to grant the lock if the named lockfile has been touched
+in the last 100 ms. This fixes the prettier-on-`pnpm-lock.yaml` corruption
+class directly.

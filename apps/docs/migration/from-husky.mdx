@@ -1,0 +1,68 @@
+---
+title: "From husky"
+description: "Drop husky and move your shell hooks into betterhook.toml."
+icon: "arrow-right"
+---
+
+husky's model is "write a shell script per hook". betterhook's model is
+"declare jobs in one config file". The migration is manual but short.
+
+<Steps>
+  <Step title="List your husky hooks">
+    ```sh
+    ls .husky
+    # pre-commit
+    # commit-msg
+    ```
+  </Step>
+  <Step title="Scaffold betterhook">
+    ```sh
+    betterhook init
+    ```
+  </Step>
+  <Step title="Move each script's command into betterhook.toml">
+    If `.husky/pre-commit` runs `npx lint-staged`:
+
+    ```toml
+    [hooks.pre-commit.jobs.lint-staged]
+    run = "npx lint-staged"
+    ```
+
+    Or pull each linter out into its own job so you get betterhook's
+    parallelism, timeouts, and isolation:
+
+    ```toml
+    [hooks.pre-commit]
+    parallel = true
+
+    [hooks.pre-commit.jobs.fmt]
+    run = "prettier --write {staged_files}"
+    glob = ["*.ts", "*.tsx", "*.css"]
+    stage_fixed = true
+    isolate = "prettier"
+
+    [hooks.pre-commit.jobs.lint]
+    run = "eslint --fix {staged_files}"
+    glob = ["*.ts", "*.tsx"]
+    isolate = "eslint"
+    ```
+  </Step>
+  <Step title="Install with --takeover">
+    ```sh
+    betterhook install --takeover
+    ```
+    husky sets `core.hooksPath` to `.husky`; `--takeover` unsets it.
+  </Step>
+  <Step title="Remove husky">
+    ```sh
+    pnpm remove husky
+    rm -rf .husky
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+  If you use `lint-staged`, betterhook's template + glob system does the
+  same thing natively. Pull each linter into its own job and let
+  betterhook handle the "only run on changed files" logic.
+</Tip>

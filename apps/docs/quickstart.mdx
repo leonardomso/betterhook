@@ -1,0 +1,105 @@
+---
+title: "Quickstart"
+description: "Go from zero to a working worktree-aware pre-commit hook in 60 seconds."
+icon: "rocket"
+---
+
+<Steps>
+  <Step title="Install the binary">
+    ```sh
+    cargo install --path apps/cli
+    # or, once published:
+    # cargo install betterhook-cli
+    ```
+
+    On macOS you can also grab a release tarball from GitHub and drop the binary into `/usr/local/bin`.
+  </Step>
+
+  <Step title="Scaffold a starter config">
+    ```sh
+    cd your-repo
+    betterhook init
+    ```
+
+    This writes a `betterhook.toml` at the repo root with two sample jobs
+    (`cargo fmt --all -- --check` and `cargo clippy --workspace -- -D warnings`).
+    Edit it to match your stack.
+  </Step>
+
+  <Step title="Install the hook wrapper">
+    ```sh
+    betterhook install
+    ```
+
+    This writes a tiny POSIX wrapper into `<git-common-dir>/hooks/pre-commit`.
+    The wrapper is **byte-identical across every worktree of this repo** — at
+    commit time it runs `git rev-parse --show-toplevel` and dispatches to
+    whichever worktree is actually committing.
+
+    <Note>
+      If you already use husky or pre-commit and they've claimed `core.hooksPath`,
+      pass `--takeover` to replace their setup, or `--chain` to run them after betterhook.
+    </Note>
+  </Step>
+
+  <Step title="Verify">
+    ```sh
+    betterhook status | jq
+    ```
+
+    You should see:
+
+    ```json
+    {
+      "betterhook_version": "0.0.1",
+      "worktree": { "path": "...", "git_dir": "...", "common_dir": "..." },
+      "installed": {
+        "hooks": [{ "name": "pre-commit", "present": true, "matches": true }]
+      },
+      "config": { "hooks": [{ "name": "pre-commit", "jobs": ["fmt", "lint"] }] }
+    }
+    ```
+  </Step>
+
+  <Step title="Commit something">
+    ```sh
+    echo "hello" > hi.txt
+    git add hi.txt
+    git commit -m "first hook"
+    ```
+
+    betterhook runs every job in `betterhook.toml`, streams output line by line,
+    and blocks the commit if anything fails.
+  </Step>
+</Steps>
+
+## Already using another hook manager?
+
+<CardGroup cols={3}>
+  <Card title="From lefthook" icon="arrow-right" href="/migration/from-lefthook">
+    `betterhook migrate --from lefthook.yml` converts your config and writes migration notes.
+  </Card>
+  <Card title="From husky" icon="arrow-right" href="/migration/from-husky">
+    Drop husky, install betterhook with `--takeover`, move your shell into `betterhook.toml`.
+  </Card>
+  <Card title="From pre-commit" icon="arrow-right" href="/migration/from-pre-commit">
+    Similar to husky — `--takeover` + a manual job-by-job rewrite.
+  </Card>
+</CardGroup>
+
+## What to read next
+
+<CardGroup cols={2}>
+  <Card title="Full configuration guide" icon="sliders" href="/essentials/configuration">
+    Every field, realistic examples, and the template variable reference.
+  </Card>
+  <Card title="Agent integration" icon="bot" href="/agents/overview">
+    NDJSON output, the self-correction loop, Conductor integration.
+  </Card>
+  <Card title="Architecture" icon="layers" href="/architecture/overview">
+    How the worktree-aware wrapper actually works at commit time.
+  </Card>
+  <Card title="Commands" icon="terminal" href="/commands/overview">
+    Every subcommand with flags and examples.
+  </Card>
+</CardGroup>

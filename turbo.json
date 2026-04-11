@@ -20,6 +20,14 @@
       "dependsOn": ["build"],
       "inputs": ["src/**", "benches/**", "Cargo.toml"],
       "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "check": {
+      "inputs": ["**/*.mdx", "docs.json"],
+      "outputs": []
     }
   }
 }

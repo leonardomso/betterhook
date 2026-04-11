@@ -1,0 +1,55 @@
+---
+title: "betterhook init"
+description: "Scaffold a starter betterhook.toml in your repo."
+icon: "file-plus"
+---
+
+```sh
+betterhook init [--path <path>] [--force]
+```
+
+Writes a minimal `betterhook.toml` with two sample jobs: `cargo fmt --all -- --check`
+and `cargo clippy --workspace -- -D warnings`. Edit it to match your stack,
+then run [`betterhook install`](/commands/install).
+
+## Flags
+
+<ParamField path="--path" type="path" default="betterhook.toml">
+  Output path for the generated config.
+</ParamField>
+<ParamField path="--force" type="flag">
+  Overwrite an existing file. Without this, `init` refuses to clobber a
+  pre-existing config.
+</ParamField>
+
+## Example
+
+```sh
+$ betterhook init
+wrote betterhook.toml
+
+$ cat betterhook.toml
+# betterhook config
+# See https://github.com/leonardomso/betterhook for documentation.
+
+[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+priority = ["fmt", "lint"]
+
+[hooks.pre-commit.jobs.fmt]
+run = "cargo fmt --all -- --check"
+
+[hooks.pre-commit.jobs.lint]
+run = "cargo clippy --workspace -- -D warnings"
+```
+
+## Notes
+
+- The starter config is intentionally minimal. For a realistic multi-job
+  setup with formatters, linters, and tests, see
+  [Configuration](/essentials/configuration).
+- `init` does **not** run `install`. You still need to install the hook
+  wrappers afterwards.

@@ -1,0 +1,117 @@
+---
+title: "Installation"
+description: "Install the betterhook binary and set up hook wrappers for your repo."
+icon: "download"
+---
+
+## Prerequisites
+
+- **macOS or Linux.** Windows support is deferred to a future release.
+- **git** on your `PATH`.
+- **Rust 1.86+** only if you're building from source. Pre-built binaries don't need a Rust toolchain.
+
+## Install the binary
+
+<Tabs>
+  <Tab title="From source (recommended today)">
+    ```sh
+    git clone https://github.com/leonardomso/betterhook
+    cd betterhook
+    cargo install --path apps/cli
+    ```
+
+    The binary lands in `$CARGO_HOME/bin/betterhook`. Make sure that's on your `PATH`.
+  </Tab>
+  <Tab title="Homebrew (planned)">
+    ```sh
+    # not yet published
+    brew install betterhook
+    ```
+  </Tab>
+  <Tab title="crates.io (planned)">
+    ```sh
+    # not yet published
+    cargo install betterhook-cli
+    ```
+  </Tab>
+</Tabs>
+
+Verify:
+
+```sh
+betterhook --version
+# betterhook 0.0.1
+```
+
+## Set up a repo
+
+<Steps>
+  <Step title="Scaffold a config">
+    ```sh
+    cd your-repo
+    betterhook init
+    ```
+
+    Writes a starter `betterhook.toml`.
+  </Step>
+
+  <Step title="Install hook wrappers">
+    ```sh
+    betterhook install
+    ```
+
+    Writes one wrapper per hook type that your config declares. The wrapper
+    lives in the shared `<git-common-dir>/hooks/` directory — visible from
+    every worktree attached to this repo.
+  </Step>
+</Steps>
+
+## Coexisting with other hook managers
+
+betterhook refuses to clobber a foreign `core.hooksPath` silently. You have three options.
+
+<AccordionGroup>
+  <Accordion title="Takeover" icon="circle-dot">
+    ```sh
+    betterhook install --takeover
+    ```
+
+    Unsets the existing `core.hooksPath` so git looks in the shared
+    `.git/hooks/` dir (where betterhook wrote its wrapper). Recommended if
+    you're switching **away from** husky / pre-commit.
+  </Accordion>
+  <Accordion title="Chain (planned)" icon="link">
+    ```sh
+    betterhook install --chain
+    ```
+
+    Keeps the existing `core.hooksPath` in place and has the betterhook
+    wrapper call the prior hook script after ours. Use when you're in a
+    transition period with both tools running.
+  </Accordion>
+  <Accordion title="Manual" icon="wrench">
+    Unset it yourself:
+
+    ```sh
+    git config --unset core.hooksPath
+    betterhook install
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Uninstall
+
+```sh
+betterhook uninstall
+```
+
+Removes **only** wrappers whose SHA-256 matches what betterhook wrote (tracked in
+`<git-common-dir>/betterhook/installed.json`). User-edited hooks are never touched.
+If another worktree still has a `betterhook.*` file, the command refuses to run
+unless you pass `--force`.
+
+<Note>
+  The SHA manifest is what makes uninstall safe. If you manually edited a wrapper,
+  betterhook will skip it and print a warning — delete it yourself if you really want
+  it gone.
+</Note>

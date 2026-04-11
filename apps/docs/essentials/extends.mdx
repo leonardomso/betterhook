@@ -1,0 +1,109 @@
+---
+title: "Extends and local overrides"
+description: "Share a base config across repos, layer per-machine overrides."
+icon: "git-merge"
+---
+
+betterhook supports **two** inheritance mechanisms:
+
+1. **`extends`** — pull in another config file (relative or absolute path). Layered under the current file.
+2. **`betterhook.local.*`** — a gitignored sibling file merged on top of everything else.
+
+## extends
+
+```toml
+# betterhook.toml
+extends = ["./.betterhook/base.toml", "./.betterhook/node.yml"]
+
+[hooks.pre-commit.jobs.repo-specific]
+run = "custom-check.sh"
+```
+
+```toml
+# .betterhook/base.toml
+[hooks.pre-commit]
+parallel = true
+stash_untracked = true
+
+[hooks.pre-commit.jobs.fmt]
+run = "cargo fmt --all -- --check"
+
+[hooks.pre-commit.jobs.clippy]
+run = "cargo clippy --workspace -- -D warnings"
+```
+
+**Resolution is depth-first.** Each extended file is resolved recursively
+(its own `extends` is processed first), then merged in the order they appear,
+then the current file's content is layered on top.
+
+<Note>
+  **Cross-format extends works.** A `betterhook.toml` can extend a
+  `base.yml`, which can extend a `core.json`. All three formats deserialize
+  into the same internal AST.
+</Note>
+
+### Merge semantics
+
+| Thing being merged              | How it merges                                              |
+|---------------------------------|------------------------------------------------------------|
+| Scalars (bool, int, string)     | Later value wins if present; earlier kept otherwise        |
+| `hooks` map                     | Unions by hook name; overlapping hooks merge recursively   |
+| `jobs` map inside a hook        | Unions by job name; overlapping jobs merge recursively     |
+| `env` map inside a job          | **Key-by-key merge** — new keys add, existing keys override |
+| Lists (`glob`, `exclude`, etc.) | Later list replaces earlier                                |
+
+### Circular extends
+
+betterhook tracks a visited set of canonical paths during resolution and
+refuses to proceed on cycles:
+
+```text
+Error: circular extends detected at ./a.toml (visited via /abs/a.toml)
+```
+
+## betterhook.local.*
+
+Create **one of** `betterhook.local.toml`, `betterhook.local.yml`,
+`betterhook.local.yaml`, or `betterhook.local.json` next to your main
+config.
+
+- Gitignored by default (the root `.gitignore` from `betterhook init`
+  includes it).
+- Auto-discovered — you don't need to reference it from the main file.
+- Merged **last**, highest precedence.
+
+Typical uses:
+
+<CardGroup cols={2}>
+  <Card title="Bump a timeout on your slow machine" icon="clock">
+    ```toml
+    [hooks.pre-commit.jobs.test]
+    timeout = "15m"
+    ```
+  </Card>
+  <Card title="Skip a job you don't have tooling for" icon="circle-slash">
+    ```toml
+    [hooks.pre-commit.jobs.ios-build]
+    skip = "true"
+    ```
+  </Card>
+  <Card title="Point isolate at a dev daemon" icon="plug">
+    Use `BETTERHOOK_DAEMON_SOCK` in your shell profile instead — it's less noisy.
+  </Card>
+  <Card title="Add an experimental job" icon="flask">
+    ```toml
+    [hooks.pre-commit.jobs.experimental]
+    run = "./scripts/wip.sh"
+    ```
+  </Card>
+</CardGroup>
+
+## Precedence order
+
+From lowest to highest, the final config comes from:
+
+1. Every transitively-resolved `extends` file, merged in declaration order.
+2. The main `betterhook.{toml,yml,yaml,json}` at the worktree root.
+3. The sibling `betterhook.local.*`, if present.
+
+Each layer overrides the previous one under the merge rules above.

@@ -1,0 +1,127 @@
+---
+title: "Runner"
+description: "The Tokio executor, output multiplexer, and cancellation model."
+icon: "play"
+---
+
+The runner (`apps/betterhook/src/runner/`) is where hooks actually execute.
+It's built around four pieces:
+
+## 1. `JobPlan` resolution
+
+Before anything runs, each job goes through `resolve_job_plan`:
+
+1. Figure out which file set the job's template references (`{staged_files}`, `{all_files}`, `{push_files}`, `{files}`)
+2. Fetch the file list via `git ... -z` and parse NUL-delimited
+3. Filter through `globset` using the job's `glob` and `exclude`
+4. Expand the template with shell-escaped file arguments, chunking if needed for `ARG_MAX`
+
+If the job had a template but the filtered list is empty, the plan is
+`None` → the runner emits `JobSkipped { reason: "no files matched glob" }`
+instead of running anything.
+
+## 2. Sequential vs parallel execution
+
+`run_hook` dispatches to `run_sequential` or `run_parallel` based on
+`hook.parallel`:
+
+<Tabs>
+  <Tab title="Sequential">
+    ```text
+    for job in resolved_jobs {
+        if job.skipped { emit JobSkipped; continue; }
+        snapshot = maybe_snapshot_unstaged(&job);
+        for cmd in job.commands {
+            exit = run_command(...);
+            if exit != 0 { failed = true; if fail_fast { break; } }
+        }
+        if let Some(before) = snapshot {
+            git_lock.acquire();
+            apply_stage_fixed(before);
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="Parallel">
+    ```text
+    sem = Semaphore::new(parallel_limit);
+    cancel = Cancel::new();
+    for (job, plan) in runnable {
+        set.spawn(async {
+            let _permit = sem.acquire_owned();
+            run_job(job, cmd, cancel);
+            maybe_stage_fixed();
+        });
+    }
+
+    // jobs were spawned in priority order →
+    // the semaphore grants permits in that order
+    while let Some(res) = set.join_next() {
+        if res.failed && fail_fast {
+            cancel.cancel();  // propagates to every in-flight child
+            drain_remaining();
+            break;
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## 3. Cancellation model
+
+`fail_fast = true` plus a sibling job's failure should abort every
+in-flight child immediately. betterhook uses a custom `Cancel` primitive
+(`AtomicBool` + `tokio::sync::Notify`) that:
+
+- **Latches** — once `cancel()` fires, subsequent `.cancelled()` calls return
+  immediately even if they weren't waiting when the fire happened
+- **Propagates through `run_command`** — each subprocess select!'s on the
+  cancel future, its own `wait()`, and optionally a per-job timeout
+
+When cancel fires, `run_command`:
+
+1. Exits the select with `Outcome::Cancelled`
+2. Calls `child.start_kill()` (SIGKILL)
+3. Awaits the final `wait()` to reap the zombie
+4. **Aborts the stdout/stderr reader tasks** — this is non-obvious but critical:
+   if a child like `sh -c "sleep 5"` is killed, its `sh` dies but the `sleep`
+   becomes an orphan still holding the pipe fds. Without explicit abort of
+   the reader tasks, the outer code would wait for the pipe to close and
+   hang for the full 5 seconds.
+
+## 4. Output multiplexer
+
+The multiplexer (`runner/output.rs`) is an mpsc-channel actor. Every
+subprocess line becomes one `OutputEvent::Line` message; a single writer
+task holds the only handles to `stdout`/`stderr` and writes lines
+atomically.
+
+Two sinks currently exist:
+
+<Tabs>
+  <Tab title="TTY mode">
+    Colored per-job prefixes via `owo-colors`. Deterministic colors from a
+    FNV-1a hash of the job name — the same job always gets the same
+    palette slot across runs.
+  </Tab>
+  <Tab title="NDJSON mode">
+    Each `OutputEvent` is serialized to one JSON line via `serde_json`.
+    See [agents/ndjson](/agents/ndjson) for the schema.
+  </Tab>
+</Tabs>
+
+Both sinks share the same backing mpsc — the sink is selected once at
+runner start and stays fixed for the hook run.
+
+## 5. Git index lock
+
+Parallel jobs that both declare `stage_fixed = true` would race on
+`.git/index.lock` if they ran `git add` concurrently. The runner wraps
+every index-mutating operation in a shared `Arc<tokio::sync::Mutex<()>>` —
+the mutex is cheap, and serializing `git add` calls costs nothing in
+practice.
+
+## Performance
+
+See [reference/performance](/reference/performance) for measured targets.
+The runner is benchmarked via criterion in `apps/betterhook/benches/`.

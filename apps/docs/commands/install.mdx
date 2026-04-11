@@ -1,0 +1,76 @@
+---
+title: "betterhook install"
+description: "Write worktree-aware hook wrappers into the shared .git/hooks/ directory."
+icon: "download"
+---
+
+```sh
+betterhook install [--hook <name>...] [--takeover] [--config <path>]
+```
+
+Writes one byte-identical POSIX wrapper into `<git-common-dir>/hooks/<hookname>`
+for every hook type declared in your config. At commit time, the wrapper runs
+`git rev-parse --show-toplevel` and dispatches to the current worktree's own
+`betterhook.*` file.
+
+## Flags
+
+<ParamField path="--hook" type="string (comma-separated)" default="every hook in your config">
+  Restrict which hook types to install. E.g. `--hook pre-commit,pre-push`.
+</ParamField>
+<ParamField path="--takeover" type="flag">
+  Unset an existing foreign `core.hooksPath` before installing. Use this when
+  switching from husky / pre-commit.
+</ParamField>
+<ParamField path="--config" type="path" default="./betterhook.toml">
+  Explicit config file to read.
+</ParamField>
+
+## What gets written
+
+- `<git-common-dir>/hooks/<hookname>` — the wrapper script, executable
+- `<git-common-dir>/betterhook/installed.json` — the SHA manifest for safe uninstall
+
+## The wrapper script
+
+```sh
+#!/usr/bin/env sh
+# betterhook wrapper v1 — DO NOT EDIT
+set -e
+hook_name="$(basename "$0")"
+worktree_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+exec "/path/to/betterhook" __dispatch \
+  --hook "$hook_name" \
+  --worktree "$worktree_root" \
+  --git-dir "${GIT_DIR:-}" \
+  -- "$@"
+```
+
+Three properties make this worktree-native:
+
+1. **No embedded config path.** The dispatch is purely runtime.
+2. **`git rev-parse --show-toplevel`** reliably returns the *current* worktree
+   even though `$0` lives in the shared dir.
+3. **`$@` passthrough** so `commit-msg`, `pre-push`, etc. receive their
+   original arguments.
+
+## Coexistence with other hook managers
+
+betterhook refuses to clobber a foreign `core.hooksPath` by default. See
+[Installation → Coexisting](/essentials/installation#coexisting-with-other-hook-managers)
+for your options.
+
+## Idempotency
+
+Running `install` twice is a no-op — the wrapper is content-addressed and
+byte-identical. Two worktrees installing at the same time don't race.
+
+## Example
+
+```sh
+$ betterhook install
+betterhook installed 2 wrappers:
+  /Users/you/repo/.git/hooks/pre-commit
+  /Users/you/repo/.git/hooks/pre-push
+manifest: /Users/you/repo/.git/betterhook/installed.json
+```

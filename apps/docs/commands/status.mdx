@@ -1,0 +1,100 @@
+---
+title: "betterhook status"
+description: "JSON snapshot of installed hooks, config, and worktree identity for agent introspection."
+icon: "activity"
+---
+
+```sh
+betterhook status [--worktree <path>]
+```
+
+Emits a pretty-printed JSON document describing:
+
+- The current worktree's git identity (`path`, `git_dir`, `common_dir`)
+- Installed hooks — which exist, their expected SHA, whether the file on disk matches
+- The resolved config — which hook types are declared, which jobs each has
+- The betterhook version that produced the install
+
+Designed as the first call an agent makes after landing in a repo.
+
+## Flags
+
+<ParamField path="--worktree" type="path" default=".">
+  Which worktree root to inspect.
+</ParamField>
+
+## Example output
+
+```json
+{
+  "betterhook_version": "0.0.1",
+  "worktree": {
+    "path": "/Users/you/repo",
+    "git_dir": "/Users/you/repo/.git",
+    "common_dir": "/Users/you/repo/.git"
+  },
+  "installed": {
+    "manifest_path": "/Users/you/repo/.git/betterhook/installed.json",
+    "wrapper_version": 1,
+    "betterhook_bin": "/Users/you/.cargo/bin/betterhook",
+    "installed_for_versions": "0.0.1",
+    "hooks": [
+      {
+        "name": "pre-commit",
+        "expected_sha": "sha256:3f8e9a...",
+        "present": true,
+        "matches": true
+      }
+    ]
+  },
+  "config": {
+    "path": "/Users/you/repo/betterhook.toml",
+    "hooks": [
+      {
+        "name": "pre-commit",
+        "parallel": true,
+        "fail_fast": false,
+        "stash_untracked": true,
+        "jobs": ["fmt", "lint", "test"]
+      }
+    ]
+  }
+}
+```
+
+## Using with jq
+
+<CodeGroup>
+```sh Is betterhook set up?
+betterhook status | jq '.installed != null'
+```
+
+```sh Which jobs would run on pre-commit?
+betterhook status | jq '.config.hooks[] | select(.name == "pre-commit") | .jobs'
+```
+
+```sh Are all installed hooks intact?
+betterhook status | jq '.installed.hooks | all(.matches)'
+```
+
+```sh Get the exact betterhook binary path for piping
+betterhook status | jq -r '.installed.betterhook_bin'
+```
+</CodeGroup>
+
+## Fields are null-safe
+
+When the worktree has no config, `config` is `null`. When it has no install,
+`installed` is `null`. Agents can use those checks to drive onboarding flows
+(e.g. "this repo doesn't have betterhook installed — prompt the user").
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="Agent integration" icon="bot" href="/agents/overview">
+    How to wire `betterhook status` into an agent loop.
+  </Card>
+  <Card title="NDJSON output" icon="code" href="/agents/ndjson">
+    The streaming event schema for `run --json`.
+  </Card>
+</CardGroup>

@@ -1,0 +1,98 @@
+---
+title: "betterhook fix"
+description: "Run every job's fix = ... variant — the agent self-correction surface."
+icon: "wand-sparkles"
+---
+
+```sh
+betterhook fix [--hook <name>] [--job <name>,...] [--worktree <path>]
+```
+
+Builds a synthetic hook where each job's `run` is replaced with its `fix = ...`
+variant, then executes it. Jobs without a `fix` variant are dropped.
+
+This is the **agent self-correction surface**. When a formatter hook fails,
+an agent can run `betterhook fix` to auto-correct and retry.
+
+## Flags
+
+<ParamField path="--hook" type="string" default="pre-commit">
+  Which hook to fix. Defaults to `pre-commit` since that's where formatters usually live.
+</ParamField>
+<ParamField path="--job" type="comma-separated list">
+  Restrict to specific job names. Without this, every job with a `fix` variant runs.
+</ParamField>
+<ParamField path="--worktree" type="path" default=".">
+  Which worktree root to run from.
+</ParamField>
+
+## Declaring a fix variant
+
+In `betterhook.toml`:
+
+```toml
+[hooks.pre-commit.jobs.fmt]
+run = "prettier --check {staged_files}"
+fix = "prettier --write {files}"
+glob = ["*.ts", "*.tsx"]
+stage_fixed = true
+
+[hooks.pre-commit.jobs.lint]
+run = "eslint {staged_files}"
+fix = "eslint --fix {files}"
+glob = ["*.ts", "*.tsx"]
+```
+
+The **`run`** variant is a checker (read-only). The **`fix`** variant is the
+write-mode counterpart. The typical pattern:
+
+| Tool       | `run`                                | `fix`                             |
+|------------|--------------------------------------|-----------------------------------|
+| Prettier   | `prettier --check {staged_files}`    | `prettier --write {files}`        |
+| ESLint     | `eslint {staged_files}`              | `eslint --fix {files}`            |
+| Ruff       | `ruff check {staged_files}`          | `ruff check --fix {files}`        |
+| Rustfmt    | `cargo fmt --all -- --check`         | `cargo fmt --all`                 |
+| gofmt      | `gofmt -l {staged_files}`            | `gofmt -w {files}`                |
+
+## The self-correction loop
+
+<Steps>
+  <Step title="Agent commits">
+    ```sh
+    git commit -m "feat: my change"
+    ```
+    Pre-commit runs. Prettier fails because `a.ts` isn't formatted.
+  </Step>
+  <Step title="Agent fixes">
+    ```sh
+    betterhook fix
+    ```
+    Prettier's `fix` variant rewrites `a.ts` in place. Because the job has
+    `stage_fixed = true`, the new content is automatically re-staged.
+  </Step>
+  <Step title="Agent retries">
+    ```sh
+    git commit -m "feat: my change"
+    ```
+    Pre-commit runs again. Passes. Commit lands.
+  </Step>
+</Steps>
+
+## Example
+
+```sh
+$ betterhook fix
+▶ fmt prettier --write a.ts b.ts
+[fmt] a.ts 12ms
+[fmt] b.ts 8ms
+✓ fmt (22ms, exit 0)
+▶ lint eslint --fix a.ts b.ts
+✓ lint (210ms, exit 0)
+── OK — 2 run, 0 skipped, 234ms
+```
+
+<Note>
+  `betterhook fix` uses the same streaming output, timeouts, and
+  coordinator locks as `run` — it's a full runner invocation, just with
+  the `fix` command substituted.
+</Note>

@@ -1,0 +1,126 @@
+---
+title: "Architecture overview"
+description: "How betterhook is organized and how a commit actually flows through it."
+icon: "layers"
+---
+
+betterhook is a Rust cargo workspace split into two apps and an `xtask`:
+
+```text
+betterhook/
+├── apps/
+│   ├── betterhook/    # library crate + betterhookd binary
+│   └── cli/           # the `betterhook` CLI (thin clap frontend)
+├── xtask/             # bench + stress + lefthook-compat harness
+├── docs/              # protocol spec (published alongside docs site)
+├── man/               # betterhook.1 man page
+└── apps/docs/         # this site (Mintlify)
+```
+
+## Library modules
+
+<CardGroup cols={2}>
+  <Card title="config/" icon="sliders" href="/essentials/configuration">
+    Multi-format parser (TOML + YAML + JSON), typed AST, extends inheritance, lefthook migrator.
+  </Card>
+  <Card title="git/" icon="git-branch" href="/architecture/worktree-model">
+    Worktree introspection, `-z` NUL-delimited fileset computation, stash safety.
+  </Card>
+  <Card title="runner/" icon="play" href="/architecture/runner">
+    Tokio executor (sequential + parallel), line-streaming subprocess wrapper, output multiplexer.
+  </Card>
+  <Card title="lock/" icon="lock" href="/essentials/isolation">
+    Coordinator client, bincode wire protocol, fs4 flock fallback.
+  </Card>
+  <Card title="daemon/" icon="server" href="/architecture/daemon">
+    `betterhookd` — Unix socket listener, lock registry, idle-exit lifecycle.
+  </Card>
+  <Card title="install/" icon="download" href="/commands/install">
+    Wrapper script rendering, SHA-verified install/uninstall, `installed.json` manifest.
+  </Card>
+  <Card title="dispatch.rs" icon="workflow">
+    Runtime config resolution for the wrapper.
+  </Card>
+  <Card title="status.rs" icon="activity">
+    Agent introspection.
+  </Card>
+</CardGroup>
+
+## How a commit actually flows
+
+<Steps>
+  <Step title="You run git commit">
+    ```sh
+    git commit -m "feat: my change"
+    ```
+  </Step>
+  <Step title="Git executes the pre-commit hook">
+    Looks at `core.hooksPath` (default: `<git-common-dir>/hooks/`) and executes
+    the `pre-commit` script. That script is **our wrapper**, written by
+    `betterhook install`.
+  </Step>
+  <Step title="The wrapper resolves the current worktree">
+    ```sh
+    worktree_root="$(git rev-parse --show-toplevel)"
+    ```
+    This returns the current worktree root — even though the wrapper itself
+    lives in the shared common dir. This is the git feature lefthook fails
+    to use correctly.
+  </Step>
+  <Step title="The wrapper execs into betterhook">
+    ```sh
+    exec "/path/to/betterhook" __dispatch \
+      --hook pre-commit \
+      --worktree "$worktree_root" \
+      --git-dir "$GIT_DIR" \
+      -- "$@"
+    ```
+    `exec` means no extra process in the chain.
+  </Step>
+  <Step title="betterhook loads the worktree's config">
+    Walks `$worktree_root` for `betterhook.{toml,yml,yaml,json}`, resolves
+    `extends`, applies `betterhook.local.*`, lowers to the typed `Config`.
+    On soft-miss (no config, no hook, no jobs) it exits 0 silently.
+  </Step>
+  <Step title="The runner spawns jobs">
+    If `hook.parallel` is true, via a `tokio::sync::Semaphore`-bounded
+    JoinSet in priority order; otherwise sequentially. Each job's subprocess
+    streams output line-by-line through the central
+    `OutputMultiplexer` actor.
+  </Step>
+  <Step title="Isolation, stash, timeouts, stage_fixed">
+    Every cross-cutting feature — coordinator locks, untracked-stash safety,
+    per-job timeouts, `stage_fixed` re-adding — is applied inline as the
+    runner walks the job list.
+  </Step>
+  <Step title="Summary and exit">
+    A final `summary` event fires (to TTY or NDJSON), `run_hook` returns an
+    `ExecutionReport`, and the CLI maps it to the documented exit code.
+    Non-zero blocks the commit.
+  </Step>
+</Steps>
+
+## Design constraints
+
+1. **Worktree-native.** Every git operation is scoped to an explicit worktree path; we never rely on ambient `$GIT_DIR`.
+2. **Streaming, not buffered.** Tokio + `AsyncBufReadExt::lines()` means memory is O(1) regardless of subprocess output.
+3. **Agent-first.** NDJSON output, stable exit codes, machine-readable `status` and `explain`.
+4. **Opt-in complexity.** The coordinator daemon, fuzzing, benches, and compat suite are all separable — you can ship a working hook with just `init + install + run`.
+5. **Deliberate dependency hygiene.** We shell out to the user's `git` binary instead of linking libgit2/gix, which is the root cause of lefthook's worktree bugs.
+
+## What to read next
+
+<CardGroup cols={2}>
+  <Card title="Worktree model" icon="git-branch" href="/architecture/worktree-model">
+    The exact git primitives betterhook relies on.
+  </Card>
+  <Card title="Runner" icon="play" href="/architecture/runner">
+    How the parallel executor is built.
+  </Card>
+  <Card title="Daemon" icon="server" href="/architecture/daemon">
+    The coordinator's socket, lock registry, and lifecycle.
+  </Card>
+  <Card title="Wire protocol" icon="network" href="/reference/protocol">
+    The bincode protocol between runner and daemon.
+  </Card>
+</CardGroup>

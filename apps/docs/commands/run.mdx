@@ -1,0 +1,92 @@
+---
+title: "betterhook run"
+description: "Run a named hook directly, with dry-run and NDJSON output."
+icon: "play"
+---
+
+```sh
+betterhook run <hook> [--dry-run] [--json] [--skip=a,b] [--only=a,b] [--worktree <path>]
+```
+
+Runs a named hook without going through the installed wrapper. Most useful
+for local testing and CI workflows that want to invoke betterhook directly.
+
+## Arguments
+
+<ParamField path="hook" type="string" required>
+  The hook name (e.g. `pre-commit`, `pre-push`).
+</ParamField>
+
+## Flags
+
+<ParamField path="--dry-run" type="flag">
+  Print a JSON plan of what would run without executing anything.
+</ParamField>
+<ParamField path="--json" type="flag">
+  Emit NDJSON events instead of TTY output. See [Agents → NDJSON](/agents/ndjson).
+</ParamField>
+<ParamField path="--skip" type="comma-separated list">
+  Job names to skip for this run. Overrides `BETTERHOOK_SKIP`.
+</ParamField>
+<ParamField path="--only" type="comma-separated list">
+  Allowlist of job names. When set, every other job is skipped. Overrides `BETTERHOOK_ONLY`.
+</ParamField>
+<ParamField path="--worktree" type="path" default=".">
+  Which worktree root to run from.
+</ParamField>
+
+## Examples
+
+<Tabs>
+  <Tab title="Basic run">
+    ```sh
+    $ betterhook run pre-commit
+    ▶ fmt prettier --write a.ts b.ts
+    [fmt] a.ts 4ms
+    [fmt] b.ts 3ms
+    ✓ fmt (12ms, exit 0)
+    ▶ lint eslint --cache --fix a.ts b.ts
+    [lint] a.ts: clean
+    [lint] b.ts: clean
+    ✓ lint (312ms, exit 0)
+    ── OK — 2 run, 0 skipped, 324ms
+    ```
+  </Tab>
+  <Tab title="Dry-run">
+    ```sh
+    $ betterhook run pre-commit --dry-run
+    {
+      "config_path": "/repo/betterhook.toml",
+      "hook": "pre-commit",
+      "jobs_planned": ["fmt", "lint", "test"]
+    }
+    ```
+  </Tab>
+  <Tab title="JSON (NDJSON)">
+    ```sh
+    $ betterhook run pre-commit --json
+    {"kind":"job_started","hook":"pre-commit","job":"fmt","cmd":"prettier --write a.ts"}
+    {"kind":"line","job":"fmt","stream":"stdout","line":"a.ts 4ms"}
+    {"kind":"job_finished","job":"fmt","exit":0,"duration":"12ms"}
+    {"kind":"summary","ok":true,"jobs_run":1,"jobs_skipped":0,"total":"12ms"}
+    ```
+  </Tab>
+  <Tab title="Skip a slow job">
+    ```sh
+    $ betterhook run pre-commit --skip=test
+    ▶ fmt ...
+    ∘ test skipped (filtered by --skip/--only)
+    ── OK — 2 run, 1 skipped, 324ms
+    ```
+  </Tab>
+</Tabs>
+
+## Exit codes
+
+`run` uses the [stable betterhook contract](/reference/exit-codes) — `0` on
+success, `1` when any job fails, `124` on per-job timeout, etc.
+
+<Tip>
+  If you want to test your config without touching git state,
+  `betterhook run --dry-run` is faster and safer than committing a throwaway file.
+</Tip>
