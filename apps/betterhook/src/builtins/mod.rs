@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use crate::runner::output::DiagnosticSeverity;
 
 pub mod clippy;
+pub mod prettier;
 pub mod rustfmt;
 
 /// Opaque reference used by `config::Job::builtin = "<name>"`.
@@ -66,7 +67,7 @@ pub struct Diagnostic {
 #[must_use]
 pub fn registry() -> BTreeMap<&'static str, BuiltinMeta> {
     let mut map = BTreeMap::new();
-    let items = [rustfmt::meta(), clippy::meta()];
+    let items = [rustfmt::meta(), clippy::meta(), prettier::meta()];
     for m in items {
         map.insert(m.id.0, m);
     }
