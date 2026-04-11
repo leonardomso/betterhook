@@ -11,9 +11,13 @@
 //! runner lands in phases 29–31.
 
 pub mod hash;
+pub mod lookup;
 pub mod store;
 
 pub use hash::{
     ArgsHash, CacheKey, ContentHash, ToolHash, args_hash, combine_key, hash_bytes, hash_file,
+};
+pub use lookup::{
+    args_hash_from_job, derive_key, hash_file_set, lookup, store as store_result, tool_hash_proxy,
 };
 pub use store::{CachedResult, Store, StoreError, cache_dir};

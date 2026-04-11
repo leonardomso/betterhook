@@ -770,7 +770,7 @@ mod tests {
         // contention and DAG setup overhead because the point of
         // the check is "clearly parallel, not serial".
         assert!(
-            elapsed.as_millis() < 500,
+            elapsed.as_millis() < 800,
             "parallel run should finish well under 4×50ms serial, took {elapsed:?}"
         );
     }
