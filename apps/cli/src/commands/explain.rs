@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use betterhook::config;
 use betterhook::dispatch::find_config;
+use betterhook::runner::build_dag;
 use miette::{IntoDiagnostic, miette};
 
 #[derive(Debug, clap::Args)]
@@ -59,9 +60,57 @@ pub fn run(args: &Args) -> miette::Result<()> {
             "interactive": job.interactive,
             "priority": job.priority,
             "isolate": format!("{:?}", job.isolate),
+            "reads": job.reads,
+            "writes": job.writes,
+            "network": job.network,
+            "concurrent_safe": job.concurrent_safe,
         }));
     }
     payload["jobs"] = serde_json::Value::Array(jobs);
+
+    // Resolved capability DAG (phase 28).
+    if let Ok(graph) = build_dag(&hook.jobs) {
+        let roots: Vec<&str> = graph
+            .roots()
+            .iter()
+            .map(|&i| graph.nodes[i].job.name.as_str())
+            .collect();
+        let edges: Vec<[&str; 2]> = graph
+            .edges()
+            .iter()
+            .map(|&(a, b)| {
+                [
+                    graph.nodes[a].job.name.as_str(),
+                    graph.nodes[b].job.name.as_str(),
+                ]
+            })
+            .collect();
+        let mut digraph = String::from("digraph betterhook {\n");
+        digraph.push_str("  rankdir = LR;\n");
+        for node in &graph.nodes {
+            let _ = std::fmt::Write::write_fmt(
+                &mut digraph,
+                format_args!("  \"{}\";\n", node.job.name),
+            );
+        }
+        for (a, b) in graph.edges() {
+            let _ = std::fmt::Write::write_fmt(
+                &mut digraph,
+                format_args!(
+                    "  \"{}\" -> \"{}\";\n",
+                    graph.nodes[a].job.name, graph.nodes[b].job.name
+                ),
+            );
+        }
+        digraph.push_str("}\n");
+        payload["dag"] = serde_json::json!({
+            "node_count": graph.nodes.len(),
+            "edge_count": graph.edge_count(),
+            "roots": roots,
+            "edges": edges,
+            "digraph": digraph,
+        });
+    }
 
     let pretty = serde_json::to_string_pretty(&payload).into_diagnostic()?;
     println!("{pretty}");

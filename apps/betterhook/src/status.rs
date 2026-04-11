@@ -64,6 +64,21 @@ pub struct HookInfo {
     pub fail_fast: bool,
     pub stash_untracked: bool,
     pub jobs: Vec<String>,
+    /// Phase 28: resolved DAG summary so agents can see at a glance
+    /// which jobs are roots, how many edges exist, and which pairs
+    /// will serialize.
+    pub dag: Option<DagSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DagSummary {
+    pub node_count: usize,
+    pub edge_count: usize,
+    /// Job names that have no parents in the DAG — the scheduler
+    /// dispatches these first.
+    pub roots: Vec<String>,
+    /// `(parent, child)` pairs for every edge. Order is stable.
+    pub edges: Vec<(String, String)>,
 }
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
@@ -179,9 +194,30 @@ fn read_config(worktree: &Path) -> ConfigResult<Option<ConfigInfo>> {
             fail_fast: h.fail_fast,
             stash_untracked: h.stash_untracked,
             jobs: h.jobs.iter().map(|j| j.name.clone()).collect(),
+            dag: summarize_dag(h),
         })
         .collect();
     Ok(Some(ConfigInfo { path, hooks }))
+}
+
+fn summarize_dag(hook: &crate::config::Hook) -> Option<DagSummary> {
+    let graph = crate::runner::build_dag(&hook.jobs).ok()?;
+    let roots: Vec<String> = graph
+        .roots()
+        .into_iter()
+        .map(|i| graph.nodes[i].job.name.clone())
+        .collect();
+    let edges: Vec<(String, String)> = graph
+        .edges()
+        .into_iter()
+        .map(|(a, b)| (graph.nodes[a].job.name.clone(), graph.nodes[b].job.name.clone()))
+        .collect();
+    Some(DagSummary {
+        node_count: graph.nodes.len(),
+        edge_count: graph.edge_count(),
+        roots,
+        edges,
+    })
 }
 
 // Silence unused-import complaints when the optional git result path
