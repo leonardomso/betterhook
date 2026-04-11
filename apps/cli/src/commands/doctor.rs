@@ -9,9 +9,9 @@
 //! `run-hook → dispatch → execute` path.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use betterhook::builtins;
+use tokio::process::Command;
 use betterhook::daemon::speculative::read_stats;
 use betterhook::git::{git_common_dir, show_toplevel};
 use betterhook::install::{InstalledManifest, MANIFEST_FILENAME};
@@ -56,8 +56,8 @@ pub async fn run(args: Args) -> miette::Result<()> {
         check_builtin_tools(&toplevel),
         check_cache_writable(&common_dir),
         check_watcher(&common_dir),
-        check_orphan_stashes(&toplevel),
-        check_core_hookspath(&toplevel),
+        check_orphan_stashes(&toplevel).await,
+        check_core_hookspath(&toplevel).await,
     ];
 
     let ok = checks
@@ -242,11 +242,12 @@ fn check_watcher(common_dir: &Path) -> Check {
     }
 }
 
-fn check_orphan_stashes(worktree: &Path) -> Check {
+async fn check_orphan_stashes(worktree: &Path) -> Check {
     let out = Command::new("git")
         .current_dir(worktree)
         .args(["stash", "list"])
-        .output();
+        .output()
+        .await;
     let Ok(out) = out else {
         return Check {
             name: "orphan_stashes",
@@ -277,11 +278,12 @@ fn check_orphan_stashes(worktree: &Path) -> Check {
     }
 }
 
-fn check_core_hookspath(worktree: &Path) -> Check {
+async fn check_core_hookspath(worktree: &Path) -> Check {
     let out = Command::new("git")
         .current_dir(worktree)
         .args(["config", "--get", "core.hooksPath"])
-        .output();
+        .output()
+        .await;
     let Ok(out) = out else {
         return Check {
             name: "core_hookspath",
