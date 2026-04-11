@@ -1,6 +1,7 @@
 pub mod builtins;
 pub mod cache;
 pub mod dispatch;
+pub mod doctor;
 pub mod explain;
 pub mod fix;
 pub mod init;
