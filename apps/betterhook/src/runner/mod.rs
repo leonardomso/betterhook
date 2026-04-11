@@ -6,6 +6,7 @@
 
 pub mod dag;
 pub mod executor;
+pub mod glob_util;
 pub mod output;
 pub mod proc;
 

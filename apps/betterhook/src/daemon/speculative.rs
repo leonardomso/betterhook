@@ -14,7 +14,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
+
+use crate::runner::glob_util::build_globset_always;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -104,11 +106,7 @@ impl HookMatcher {
             if !job.concurrent_safe {
                 continue;
             }
-            let mut builder = GlobSetBuilder::new();
-            for pat in &job.glob {
-                builder.add(Glob::new(pat)?);
-            }
-            let set = builder.build()?;
+            let set = build_globset_always(&job.glob)?;
             jobs.push((job.clone(), set));
         }
         Ok(Self {

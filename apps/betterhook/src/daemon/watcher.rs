@@ -125,12 +125,8 @@ impl ExcludeFilter {
 }
 
 fn build_exclude_filter(patterns: &[String]) -> Result<ExcludeFilter, globset::Error> {
-    let mut builder = globset::GlobSetBuilder::new();
-    for pat in patterns {
-        builder.add(globset::Glob::new(pat)?);
-    }
     Ok(ExcludeFilter {
-        set: builder.build()?,
+        set: crate::runner::glob_util::build_globset_always(patterns)?,
     })
 }
 

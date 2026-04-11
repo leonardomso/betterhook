@@ -30,11 +30,12 @@
 //! test is symmetric. This is intentionally pessimistic — spurious
 //! edges serialize extra jobs but never allow unsafe parallelism.
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::config::Job;
+use crate::runner::glob_util::build_globset as build_globset_util;
 
 /// Errors raised while building the DAG.
 #[derive(Debug, Error, Diagnostic)]
@@ -161,24 +162,11 @@ fn order_first(a: &Job, a_idx: usize, b: &Job, b_idx: usize) -> bool {
 }
 
 fn build_globset(job_name: &str, patterns: &[String]) -> DagResult<Option<GlobSet>> {
-    if patterns.is_empty() {
-        return Ok(None);
-    }
-    let mut builder = GlobSetBuilder::new();
-    for pat in patterns {
-        let glob = Glob::new(pat).map_err(|source| DagError::Glob {
-            job: job_name.to_owned(),
-            pattern: pat.clone(),
-            source,
-        })?;
-        builder.add(glob);
-    }
-    let set = builder.build().map_err(|source| DagError::Glob {
+    build_globset_util(patterns).map_err(|source| DagError::Glob {
         job: job_name.to_owned(),
-        pattern: "<set>".to_owned(),
+        pattern: patterns.first().cloned().unwrap_or_else(|| "<set>".to_owned()),
         source,
-    })?;
-    Ok(Some(set))
+    })
 }
 
 fn pair_conflicts(
