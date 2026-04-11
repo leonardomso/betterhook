@@ -4,6 +4,7 @@
 //! the direct fix for lefthook's "buffered then dumped on completion"
 //! behavior.
 
+pub mod dag;
 pub mod executor;
 pub mod output;
 pub mod proc;
@@ -13,6 +14,7 @@ use std::path::PathBuf;
 use miette::Diagnostic;
 use thiserror::Error;
 
+pub use dag::{DagError, DagNode, JobGraph, build_dag};
 pub use executor::{ExecutionReport, RunOptions, run_hook, run_hook_with_options};
 pub use output::{OutputEvent, SinkKind, Stream};
 pub use proc::{Cancel, EXIT_CANCELLED, EXIT_TIMEOUT};
