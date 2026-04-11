@@ -24,6 +24,12 @@ enum Command {
     Uninstall(commands::uninstall::Args),
     /// Print a JSON status for this worktree (installed hooks, config, daemon).
     Status(commands::status::Args),
+    /// Run a named hook directly. Supports --dry-run and --json.
+    Run(commands::run::Args),
+    /// Explain what a hook or job would run, without executing it.
+    Explain(commands::explain::Args),
+    /// Run every job's `fix = ...` variant (auto-formatting).
+    Fix(commands::fix::Args),
     /// Internal: invoked by the installed wrapper script. Not for direct use.
     #[command(name = "__dispatch", hide = true)]
     Dispatch(commands::dispatch::Args),
@@ -37,6 +43,9 @@ async fn main() -> miette::Result<()> {
         Command::Install(args) => commands::install::run(args).await,
         Command::Uninstall(args) => commands::uninstall::run(args).await,
         Command::Status(args) => commands::status::run(args).await,
+        Command::Run(args) => commands::run::run(args).await,
+        Command::Explain(args) => commands::explain::run(&args),
+        Command::Fix(args) => commands::fix::run(args).await,
         Command::Dispatch(args) => commands::dispatch::run(args).await,
     }
 }
