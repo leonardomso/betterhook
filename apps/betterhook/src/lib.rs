@@ -10,6 +10,8 @@ pub mod config;
 pub mod daemon;
 pub mod dispatch;
 pub mod error;
+#[cfg(feature = "fuzz-harnesses")]
+pub mod fuzz_harnesses;
 pub mod git;
 pub mod install;
 pub mod lock;

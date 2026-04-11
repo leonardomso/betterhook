@@ -23,12 +23,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use betterhook::builtins::{clippy, eslint};
-use betterhook::cache::{args_hash, hash_bytes};
-use betterhook::config::import::husky;
-use betterhook::config::parse::Format;
-use betterhook::config::parse_bytes;
-use betterhook::runner::dag::build_dag;
+use betterhook::fuzz_harnesses::{
+    run_cache_key, run_clippy_parser, run_config_parse, run_dag_resolver, run_eslint_parser,
+    run_husky_importer,
+};
 
 const SEEDS_ROOT: &str = "apps/betterhook/afl/seeds";
 
@@ -363,64 +361,7 @@ fn chrono_like_id(elapsed: Duration) -> String {
     format!("{nanos:08x}")
 }
 
-// ────────────────────── per-target harness fns ───────────────────────
-
-fn run_config_parse(data: &[u8]) {
-    let Ok(s) = std::str::from_utf8(data) else {
-        return;
-    };
-    let _ = parse_bytes(s, Format::Toml, "fuzz.toml");
-    let _ = parse_bytes(s, Format::Yaml, "fuzz.yml");
-    let _ = parse_bytes(s, Format::Json, "fuzz.json");
-    let _ = parse_bytes(s, Format::Kdl, "fuzz.kdl");
-}
-
-fn run_dag_resolver(data: &[u8]) {
-    let Ok(s) = std::str::from_utf8(data) else {
-        return;
-    };
-    let Ok(raw) = parse_bytes(s, Format::Toml, "fuzz.toml") else {
-        return;
-    };
-    let Ok(cfg) = raw.lower() else {
-        return;
-    };
-    if let Some(hook) = cfg.hooks.get("pre-commit") {
-        let _ = build_dag(&hook.jobs);
-    }
-    for pkg in cfg.packages.values() {
-        for hook in pkg.hooks.values() {
-            let _ = build_dag(&hook.jobs);
-        }
-    }
-}
-
-fn run_clippy_parser(data: &[u8]) {
-    let Ok(s) = std::str::from_utf8(data) else {
-        return;
-    };
-    let _ = clippy::parse_output(s);
-}
-
-fn run_eslint_parser(data: &[u8]) {
-    let Ok(s) = std::str::from_utf8(data) else {
-        return;
-    };
-    let _ = eslint::parse_output(s);
-}
-
-fn run_husky_importer(data: &[u8]) {
-    let Ok(s) = std::str::from_utf8(data) else {
-        return;
-    };
-    let _ = husky::from_script(s, &PathBuf::from(".husky/pre-commit"));
-}
-
-fn run_cache_key(data: &[u8]) {
-    let _ = hash_bytes(data);
-    let parts: Vec<String> = data
-        .split(|b| *b == 0)
-        .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
-        .collect();
-    let _ = args_hash(&parts);
-}
+// Per-target harness functions are imported from
+// `betterhook::fuzz_harnesses` at the top of this file, so this xtask
+// and `apps/betterhook/afl/src/bin/*.rs` always exercise identical
+// code paths.

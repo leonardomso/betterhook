@@ -38,6 +38,13 @@ futures = "0.3"
 bytes = "1"
 fs4 = { workspace = true }
 
+[features]
+default = []
+# Exports `fuzz_harnesses` — the per-target fuzz entry points. Used by
+# `apps/betterhook/afl/src/bin/*.rs` and `xtask`'s `fuzz` / `fuzz-smoke`
+# subcommands so all three share one canonical implementation.
+fuzz-harnesses = []
+
 [dev-dependencies]
 insta = { workspace = true }
 tempfile = { workspace = true }

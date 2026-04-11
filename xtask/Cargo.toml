@@ -6,7 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-betterhook = { path = "../apps/betterhook" }
+betterhook = { path = "../apps/betterhook", features = ["fuzz-harnesses"] }
 
 [lints]
 workspace = true

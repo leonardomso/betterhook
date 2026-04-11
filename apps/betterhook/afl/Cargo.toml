@@ -7,7 +7,7 @@ description = "afl.rs (American Fuzzy Lop) fuzz harnesses for betterhook."
 
 [dependencies]
 afl = "0.15"
-betterhook = { path = ".." }
+betterhook = { path = "..", features = ["fuzz-harnesses"] }
 
 [[bin]]
 name = "config_parse"
