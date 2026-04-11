@@ -164,28 +164,19 @@ pub async fn run_hook_with_options(
         });
     }
 
+    let ctx = ExecutionContext {
+        hook,
+        tx: &tx,
+        git_lock: &git_lock,
+        worktree,
+        common_dir: &common_dir,
+        no_locks,
+    };
+
     let exec_res: RunResult<RunSummary> = if hook.parallel {
-        run_parallel(
-            hook,
-            resolved,
-            &tx,
-            &git_lock,
-            worktree,
-            &common_dir,
-            no_locks,
-        )
-        .await
+        run_parallel(&ctx, resolved).await
     } else {
-        run_sequential(
-            hook,
-            resolved,
-            &tx,
-            &git_lock,
-            worktree,
-            &common_dir,
-            no_locks,
-        )
-        .await
+        run_sequential(&ctx, resolved).await
     };
 
     // Always try to pop the stash, even on error. A stash-pop failure
@@ -231,15 +222,22 @@ struct RunSummary {
     jobs_skipped: usize,
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_sequential(
-    hook: &Hook,
-    jobs: Vec<ResolvedJob>,
-    tx: &mpsc::Sender<OutputEvent>,
-    git_lock: &GitIndexLock,
-    worktree: &Path,
-    common_dir: &Path,
+/// Per-hook execution state shared across the sequential and parallel
+/// schedulers. Introduced in v1.0.1 to replace the seven-argument
+/// `run_sequential` / `run_parallel` signatures — both schedulers were
+/// passing the same bag of context through every recursion level.
+struct ExecutionContext<'a> {
+    hook: &'a Hook,
+    tx: &'a mpsc::Sender<OutputEvent>,
+    git_lock: &'a GitIndexLock,
+    worktree: &'a Path,
+    common_dir: &'a Path,
     no_locks: bool,
+}
+
+async fn run_sequential(
+    ctx: &ExecutionContext<'_>,
+    jobs: Vec<ResolvedJob>,
 ) -> RunResult<RunSummary> {
     let mut jobs_run = 0usize;
     let mut jobs_skipped = 0usize;
@@ -247,7 +245,8 @@ async fn run_sequential(
 
     'outer: for rj in jobs {
         let Some(plan) = rj.plan else {
-            let _ = tx
+            let _ = ctx
+                .tx
                 .send(OutputEvent::JobSkipped {
                     job: rj.job.name.clone(),
                     reason: "no files matched glob".to_owned(),
@@ -257,11 +256,11 @@ async fn run_sequential(
             continue;
         };
 
-        let before_unstaged = snapshot_unstaged_if_needed(&rj.job, worktree).await?;
+        let before_unstaged = snapshot_unstaged_if_needed(&rj.job, ctx.worktree).await?;
 
         let (_guard, lock_env) =
-            acquire_if_isolated(&rj.job, common_dir, worktree, no_locks, tx).await;
-        let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook.name.clone())];
+            acquire_if_isolated(&rj.job, ctx.common_dir, ctx.worktree, ctx.no_locks, ctx.tx).await;
+        let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), ctx.hook.name.clone())];
         extra_env.extend(lock_env);
         for cmd in &plan.commands {
             let exit = run_command(
@@ -272,20 +271,20 @@ async fn run_sequential(
                 &extra_env,
                 rj.job.timeout,
                 None,
-                tx,
+                ctx.tx,
             )
             .await?;
             if exit != 0 {
                 failed = true;
-                if hook.fail_fast {
+                if ctx.hook.fail_fast {
                     break 'outer;
                 }
             }
         }
 
         if let Some(before) = before_unstaged {
-            let _g = git_lock.lock().await;
-            apply_stage_fixed(worktree, &before).await?;
+            let _g = ctx.git_lock.lock().await;
+            apply_stage_fixed(ctx.worktree, &before).await?;
         }
 
         jobs_run += 1;
@@ -304,22 +303,18 @@ async fn run_sequential(
 /// with a DAG walker that respects declared `reads`/`writes`/`network`
 /// capabilities. Jobs whose capability sets are disjoint run in
 /// parallel; jobs that conflict serialize in a priority-ordered way.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_lines)]
 async fn run_parallel(
-    hook: &Hook,
+    ctx: &ExecutionContext<'_>,
     jobs: Vec<ResolvedJob>,
-    tx: &mpsc::Sender<OutputEvent>,
-    git_lock: &GitIndexLock,
-    worktree: &Path,
-    common_dir: &Path,
-    no_locks: bool,
 ) -> RunResult<RunSummary> {
-    let limit = hook
+    let limit = ctx
+        .hook
         .parallel_limit
         .unwrap_or_else(default_parallel_limit)
         .max(1);
-    let hook_name = hook.name.clone();
-    let fail_fast = hook.fail_fast;
+    let hook_name = ctx.hook.name.clone();
+    let fail_fast = ctx.hook.fail_fast;
 
     // Align plans with the DAG's node indices by reusing the same job
     // ordering (`jobs` came from `hook.jobs`).
@@ -367,7 +362,8 @@ async fn run_parallel(
             // (template with no matching files). Transition it as if
             // it had finished instantly so children can become ready.
             let Some(plan) = plan_opt else {
-                let _ = tx
+                let _ = ctx
+                    .tx
                     .send(OutputEvent::JobSkipped {
                         job: job.name.clone(),
                         reason: "no files matched glob".to_owned(),
@@ -383,16 +379,17 @@ async fn run_parallel(
             // we can't faithfully replay.
             if job.concurrent_safe {
                 if let Ok(Some(cached)) =
-                    crate::cache::lookup(common_dir, &job, &plan.files)
+                    crate::cache::lookup(ctx.common_dir, &job, &plan.files)
                 {
-                    let _ = tx
+                    let _ = ctx
+                        .tx
                         .send(OutputEvent::JobCacheHit {
                             job: job.name.clone(),
                             files: plan.files.len(),
                         })
                         .await;
                     for event in cached.events {
-                        let _ = tx.send(event).await;
+                        let _ = ctx.tx.send(event).await;
                     }
                     if cached.exit != 0 {
                         failed = true;
@@ -414,11 +411,12 @@ async fn run_parallel(
             }
 
             // Spawn the real job.
-            let tx_spawn = tx.clone();
+            let tx_spawn = ctx.tx.clone();
             let hook_name_spawn = hook_name.clone();
-            let git_lock_spawn = git_lock.clone();
-            let worktree_spawn = worktree.to_path_buf();
-            let common_dir_spawn = common_dir.to_path_buf();
+            let git_lock_spawn = ctx.git_lock.clone();
+            let worktree_spawn = ctx.worktree.to_path_buf();
+            let common_dir_spawn = ctx.common_dir.to_path_buf();
+            let no_locks_spawn = ctx.no_locks;
             let cancel_spawn = cancel.clone();
             let plan_for_spawn = plan.clone();
             running += 1;
@@ -430,7 +428,7 @@ async fn run_parallel(
                         &job,
                         &common_dir_spawn,
                         &worktree_spawn,
-                        no_locks,
+                        no_locks_spawn,
                         &tx_spawn,
                     )
                     .await;
