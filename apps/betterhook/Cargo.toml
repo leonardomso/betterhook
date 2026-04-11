@@ -19,6 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 serde_yaml_ng = { workspace = true }
+kdl = { workspace = true }
 miette = { workspace = true }
 thiserror = { workspace = true }
 semver = { workspace = true }

@@ -14,6 +14,7 @@ pub enum Format {
     Toml,
     Yaml,
     Json,
+    Kdl,
 }
 
 impl Format {
@@ -23,6 +24,7 @@ impl Format {
             Some("toml") => Ok(Self::Toml),
             Some("yml" | "yaml") => Ok(Self::Yaml),
             Some("json") => Ok(Self::Json),
+            Some("kdl") => Ok(Self::Kdl),
             _ => Err(ConfigError::UnsupportedFormat {
                 path: path.to_path_buf(),
             }),
@@ -49,6 +51,7 @@ pub fn parse_bytes(source: &str, format: Format, name: &str) -> ConfigResult<Raw
         Format::Toml => parse_toml(source, name),
         Format::Yaml => parse_yaml(source, name),
         Format::Json => parse_json(source, name),
+        Format::Kdl => super::kdl::parse_kdl(source, name),
     }
 }
 

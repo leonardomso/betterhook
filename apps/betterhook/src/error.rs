@@ -50,6 +50,16 @@ pub enum ConfigError {
         span: Option<SourceSpan>,
     },
 
+    #[error("KDL parse error: {message}")]
+    #[diagnostic(code(betterhook::config::kdl))]
+    Kdl {
+        message: String,
+        #[source_code]
+        src: NamedSource<String>,
+        #[label("{message}")]
+        span: Option<SourceSpan>,
+    },
+
     #[error("invalid config: {message}")]
     #[diagnostic(code(betterhook::config::invalid))]
     Invalid { message: String },

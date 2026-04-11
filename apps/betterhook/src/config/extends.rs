@@ -13,7 +13,7 @@ use super::parse::parse_file;
 use super::schema::RawConfig;
 use crate::error::{ConfigError, ConfigResult};
 
-const LOCAL_CANDIDATE_EXTENSIONS: &[&str] = &["toml", "yml", "yaml", "json"];
+const LOCAL_CANDIDATE_EXTENSIONS: &[&str] = &["toml", "yml", "yaml", "json", "kdl"];
 
 /// Resolve a config file, flattening all `extends` and applying any
 /// sibling `betterhook.local.*` override.

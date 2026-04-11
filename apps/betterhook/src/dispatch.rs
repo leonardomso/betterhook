@@ -20,6 +20,7 @@ pub const CONFIG_CANDIDATES: &[&str] = &[
     "betterhook.yml",
     "betterhook.yaml",
     "betterhook.json",
+    "betterhook.kdl",
 ];
 
 /// Find the first `betterhook.*` config file in `worktree`. Returns
