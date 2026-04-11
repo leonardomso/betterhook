@@ -28,6 +28,7 @@ globset = { workspace = true }
 sha2 = { workspace = true }
 blake3 = { workspace = true }
 which = { workspace = true }
+notify = { workspace = true }
 tempfile = { workspace = true }
 owo-colors = { workspace = true }
 humantime-serde = { workspace = true }
