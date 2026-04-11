@@ -1,6 +1,12 @@
+//! Hidden compatibility alias — `betterhook migrate` was renamed to
+//! `betterhook import --from-format lefthook` in phase 51. This thin
+//! shim forwards the v0 flags to the import command so existing scripts
+//! and docs that say `betterhook migrate --from lefthook.yml` keep
+//! working for one release.
+
 use std::path::PathBuf;
 
-use betterhook::config::migrate::{MigrationReport, from_lefthook_file};
+use betterhook::config::import::{self, ImportSource, MigrationReport};
 use miette::{IntoDiagnostic, miette};
 
 #[derive(Debug, clap::Args)]
@@ -27,7 +33,7 @@ pub fn run(args: &Args) -> miette::Result<()> {
         ));
     }
 
-    let (raw, report) = from_lefthook_file(&args.from)?;
+    let (raw, report) = import::import_file(ImportSource::Lefthook, &args.from)?;
 
     // Serialize as pretty TOML. `toml::to_string_pretty` is sufficient
     // for the forgiving top-level shape our schema uses.

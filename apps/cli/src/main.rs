@@ -30,7 +30,10 @@ enum Command {
     Explain(commands::explain::Args),
     /// Run every job's `fix = ...` variant (auto-formatting).
     Fix(commands::fix::Args),
-    /// Convert a lefthook.yml to betterhook.toml.
+    /// Import a config from another hook manager (lefthook, husky, hk, pre-commit).
+    Import(commands::import::Args),
+    /// Hidden alias kept for one release: forwards to `import --from-format lefthook`.
+    #[command(hide = true)]
     Migrate(commands::migrate::Args),
     /// Inspect, clear, or verify the content-addressable hook cache.
     Cache(commands::cache::Args),
@@ -57,6 +60,7 @@ async fn main() -> miette::Result<()> {
         Command::Run(args) => commands::run::run(args).await,
         Command::Explain(args) => commands::explain::run(&args),
         Command::Fix(args) => commands::fix::run(args).await,
+        Command::Import(args) => commands::import::run(&args),
         Command::Migrate(args) => commands::migrate::run(&args),
         Command::Cache(args) => commands::cache::run(args).await,
         Command::Builtins(args) => commands::builtins::run(args),

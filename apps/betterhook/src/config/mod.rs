@@ -5,6 +5,7 @@
 //! [`schema::Config`] via [`schema::RawConfig::lower`].
 
 pub mod extends;
+pub mod import;
 pub mod kdl;
 pub mod migrate;
 pub mod parse;
