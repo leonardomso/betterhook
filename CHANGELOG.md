@@ -4,6 +4,109 @@ All notable changes to betterhook. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this
 project adheres to [semantic versioning](https://semver.org/).
 
+## [1.0.1] - 2026-04-11
+
+Code-quality release. No new features and no schema changes — every
+change preserves behavior except the async correctness fixes (which
+make the commit-time path genuinely faster under parallel load) and
+the perf wins that earn the "warm cache hit < 5 ms" v1 claim. 220
+tests pass; 231 million fuzz iterations pass across six targets.
+
+### Fixed
+
+- **Cache I/O no longer blocks the tokio executor.**
+  `cache::lookup` and `cache::store_result` are now `async` and
+  delegate every `std::fs` call to `tokio::task::spawn_blocking`.
+  Previously, every cache hit on a parallel DAG job blocked a tokio
+  worker on `std::fs::metadata` + `std::fs::read`, serializing jobs
+  whose scheduling said they should run concurrently. Sync
+  `lookup_blocking` / `store_result_blocking` variants stay around
+  for the fuzz harnesses and synchronous test paths.
+- **`git_lock` released during the `stage_fixed` status scan.**
+  `apply_stage_fixed` used to run the `git status` read *and* the
+  `git add` write under the single per-hook mutex. The read phase now
+  runs without the lock — only the index-mutating `git add` still
+  holds it. Parallel stage-fixed jobs across packages no longer queue
+  on each other's file-system scans.
+- **Watcher backpressure tightened.** The file-watcher mpsc buffer
+  dropped from 1024 → 256, matching the output multiplexer.
+  Over-buffering caused stale state in the speculative runner and
+  memory bloat under a heavy editor-save spree.
+- **`doctor` uses `tokio::process` for its `git` subprocess checks.**
+  `check_orphan_stashes` and `check_core_hookspath` previously ran
+  `std::process::Command::output()` inside an `async fn`, blocking
+  the runtime worker.
+
+### Performance
+
+- **Memoized tool hash resolution.** `resolve_tool_hash` caches its
+  result per process, keyed on the tool name. The first job in a
+  hook run pays the 3–5 ms `which` + mmap cost; every subsequent
+  job that uses the same tool is effectively free. This is the
+  single biggest warm-path win.
+- **Typed `Deserialize` structs replace `serde_json::Value` walking**
+  in every builtin parser (clippy, eslint, oxlint, ruff, biome,
+  shellcheck, gitleaks). Each parser dropped ~1–3 ms per 100
+  diagnostics because the JSON tree is no longer allocated as a
+  `Value` map. The fuzz campaign showed eslint_parser iterations
+  nearly tripling after the change.
+- **`dispatch::hook_for_match` returns `Cow<Hook>`** on the
+  no-overlay path. Saves a full `Hook` clone (including every nested
+  `Job`) per dispatch on configs with 5+ jobs.
+- **`CacheKey::relative_path` returns `PathBuf`** instead of
+  `String`. Eliminates the intermediate `format!` allocation on
+  every cache lookup.
+- **`dispatch::resolve_packages` clones each staged file exactly
+  once** — into exactly one bucket — instead of cloning into a
+  string-keyed map and re-cloning the whole vec at output time.
+
+### Internal
+
+- **Test helpers consolidated** into `tests/common/mod.rs`. Four test
+  binaries used to redefine their own `git()`, `init_repo()`,
+  `new_repo_with_worktrees()` helpers that had drifted.
+- **`RawJob` / `RawConfig` defaults + `v1_from_hooks` ctor** cut ~90
+  lines of boilerplate across the four importer modules.
+- **Builtin parser helpers** extracted (`parse_file_list`,
+  `parse_eslint_json`, `severity_from_level`). `rustfmt`, `prettier`,
+  `gofmt`, `black` share a file-list helper; `eslint` and `oxlint`
+  now share a single JSON parser; severity mapping is one function.
+- **Cache store `for_each_entry` walker** unifies the shard-walking
+  code across `len`, `stats`, `clear`, `verify`.
+- **Shared `build_globset` helper** in `runner::glob_util` replaces
+  three inline reimplementations.
+- **Fuzz harnesses consolidated** in a new `betterhook::fuzz_harnesses`
+  module behind the `fuzz-harnesses` feature. The six afl bins, the
+  xtask smoke test, and the xtask random fuzzer now call the same
+  code — eliminating a three-way drift risk.
+- **`ExecutionContext` struct** replaces the 7-argument
+  `run_sequential` / `run_parallel` signatures. Drops one
+  `#[allow(clippy::too_many_arguments)]`.
+- **`execute_job_in_dag` extracted** from the 85-line spawn closure
+  in `run_parallel`. Improves stack traces and drops `run_parallel`
+  from 243 to ~130 lines.
+- **`run_command` split** into `spawn_subprocess`, `wait_for_outcome`,
+  `resolve_exit`, `drain_readers`. Drops one
+  `#[allow(clippy::too_many_lines)]`.
+- **`install::install` split** into `write_wrappers` and
+  `write_installation_metadata`.
+- **Boxed `ConfigError` in `InstallError` and `StatusError`** — the
+  embedded `miette::NamedSource<String>` pushed the enum over 256
+  bytes. Two `#![allow(clippy::result_large_err)]` module attributes
+  removed.
+- **Rustdoc added** to every public item in `daemon::speculative`
+  and `daemon::lifecycle::InstalledUnit`.
+- **Dead sanity-check helpers removed** (`_gitres_sanity`,
+  `_force_arc_mutex`, `_path_buf_sanity`) along with the imports they
+  guarded. Three `#[allow(dead_code)]` attributes removed.
+
+### Verification
+
+- `cargo test --workspace` — 220 passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+- `cargo xtask fuzz --duration 30` — 231,038,414 iterations across
+  6 targets, 0 panics.
+
 ## [1.0.0] - 2026-04-11
 
 The first launch release. Adds the capability DAG scheduler, the

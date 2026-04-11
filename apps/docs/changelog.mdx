@@ -7,6 +7,53 @@ icon: "history"
 All notable changes follow [Keep a Changelog](https://keepachangelog.com)
 and this project adheres to [semantic versioning](https://semver.org).
 
+## v1.0.1 — 2026-04-11
+
+Code-quality release. No new features, no schema changes. Every change
+preserves behavior except the async correctness fixes (faster under
+parallel load) and the perf wins that earn the "warm cache hit < 5 ms"
+v1 claim. 220 tests pass; 231 million fuzz iterations pass across six
+targets.
+
+### Fixed
+
+<AccordionGroup>
+  <Accordion title="Async correctness" icon="shield-check">
+    - `cache::lookup` and `cache::store_result` are now `async` and delegate to `tokio::task::spawn_blocking` — the commit-time cache hit path no longer blocks tokio workers
+    - `apply_stage_fixed` releases the `git_lock` during its read phase (only the `git add` write still holds it)
+    - File-watcher mpsc buffer tightened from 1024 → 256
+    - `doctor` uses `tokio::process` for its `git` subprocess calls
+  </Accordion>
+</AccordionGroup>
+
+### Performance
+
+<AccordionGroup>
+  <Accordion title="Warm cache hit path" icon="zap">
+    - Per-process memoized tool hash resolution — the first job pays the 3–5 ms `which` + mmap cost, every subsequent job using the same tool is effectively free
+    - Typed `Deserialize` structs replace `serde_json::Value` walking in every builtin parser; ~1–3 ms saved per 100 diagnostics
+    - `dispatch::hook_for_match` returns `Cow<Hook>` — saves a full Hook clone per dispatch on configs with 5+ jobs
+    - `CacheKey::relative_path` returns `PathBuf` instead of `String`
+    - `resolve_packages` clones each staged file exactly once
+  </Accordion>
+</AccordionGroup>
+
+### Internal
+
+<AccordionGroup>
+  <Accordion title="Refactors + dedup" icon="wrench">
+    - `ExecutionContext` struct replaces 7-argument scheduler signatures
+    - `execute_job_in_dag` extracted from `run_parallel`'s 85-line closure
+    - `run_command` split into `spawn / wait / resolve / drain` helpers
+    - Cache store `for_each_entry` walker unifies `len` / `stats` / `clear` / `verify`
+    - Shared `build_globset` helper, shared builtin parser helpers
+    - Test helpers consolidated into `tests/common`
+    - Fuzz harnesses behind a single `fuzz-harnesses` feature
+    - `RawJob` / `RawConfig` defaults cut ~90 lines of importer boilerplate
+    - `ConfigError` boxed inside `InstallError` and `StatusError` — two `#![allow(clippy::result_large_err)]` removed
+  </Accordion>
+</AccordionGroup>
+
 ## v1.0.0 — 2026-04-11
 
 The launch release. Adds the capability DAG scheduler, the
