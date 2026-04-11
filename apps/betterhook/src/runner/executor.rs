@@ -7,21 +7,28 @@
 //! a tokio Semaphore so higher-priority jobs always acquire their permit
 //! first when there is contention.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Mutex, Semaphore, mpsc};
 use tokio::task::JoinSet;
 
 use crate::config::{Hook, Job};
 use crate::git::{
-    all_files, build_globset, expand_template, filter_files, has_template, push_files, staged_files,
+    StashGuard, all_files, build_globset, expand_template, filter_files, has_template, push_files,
+    run_git, staged_files, unstaged_files,
 };
 
 use super::RunResult;
 use super::output::{OutputEvent, tty_sink};
 use super::proc::run_command;
+
+/// Async mutex that serializes `git add` / `git stash` / other index
+/// operations across parallel jobs so concurrent writes to `.git/index`
+/// don't trip the built-in `index.lock`.
+type GitIndexLock = Arc<Mutex<()>>;
 
 /// Summary of a hook run, returned to the CLI for exit-code mapping.
 #[derive(Debug, Clone)]
@@ -57,6 +64,19 @@ pub async fn run_hook(hook: &Hook, worktree: &Path) -> RunResult<ExecutionReport
     let (tx, writer) = tty_sink();
     let start = Instant::now();
 
+    // Single per-hook lock covering every git index mutation (stash,
+    // add, unstash). Parallel jobs share it.
+    let git_lock: GitIndexLock = Arc::new(Mutex::new(()));
+
+    // Push an untracked+unstaged stash before the first job so formatters
+    // don't see files that aren't about to be committed (lefthook #833).
+    let stash = if hook.stash_untracked {
+        let _guard = git_lock.lock().await;
+        Some(StashGuard::push(worktree).await?)
+    } else {
+        None
+    };
+
     let mut resolved: Vec<ResolvedJob> = Vec::with_capacity(hook.jobs.len());
     for job in &hook.jobs {
         let plan = resolve_job_plan(hook, job, worktree).await?;
@@ -66,11 +86,25 @@ pub async fn run_hook(hook: &Hook, worktree: &Path) -> RunResult<ExecutionReport
         });
     }
 
-    let report = if hook.parallel {
-        run_parallel(hook, resolved, &tx).await?
+    let exec_res: RunResult<RunSummary> = if hook.parallel {
+        run_parallel(hook, resolved, &tx, &git_lock, worktree).await
     } else {
-        run_sequential(hook, resolved, &tx).await?
+        run_sequential(hook, resolved, &tx, &git_lock, worktree).await
     };
+
+    // Always try to pop the stash, even on error. A stash-pop failure
+    // is reported to stderr but does not override the primary error.
+    if let Some(guard) = stash {
+        let _guard = git_lock.lock().await;
+        if let Err(e) = guard.pop().await {
+            eprintln!("betterhook: WARNING — failed to pop untracked stash: {e}");
+            eprintln!(
+                "betterhook: your stash is still in `git stash list`; run `git stash pop` manually."
+            );
+        }
+    }
+
+    let report = exec_res?;
 
     let total = start.elapsed();
     let _ = tx
@@ -104,6 +138,8 @@ async fn run_sequential(
     hook: &Hook,
     jobs: Vec<ResolvedJob>,
     tx: &mpsc::Sender<OutputEvent>,
+    git_lock: &GitIndexLock,
+    worktree: &Path,
 ) -> RunResult<RunSummary> {
     let mut jobs_run = 0usize;
     let mut jobs_skipped = 0usize;
@@ -121,6 +157,8 @@ async fn run_sequential(
             continue;
         };
 
+        let before_unstaged = snapshot_unstaged_if_needed(&rj.job, worktree).await?;
+
         let extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook.name.clone())];
         for cmd in &plan.commands {
             let exit =
@@ -132,6 +170,12 @@ async fn run_sequential(
                 }
             }
         }
+
+        if let Some(before) = before_unstaged {
+            let _g = git_lock.lock().await;
+            apply_stage_fixed(worktree, &before).await?;
+        }
+
         jobs_run += 1;
     }
 
@@ -146,6 +190,8 @@ async fn run_parallel(
     hook: &Hook,
     jobs: Vec<ResolvedJob>,
     tx: &mpsc::Sender<OutputEvent>,
+    git_lock: &GitIndexLock,
+    worktree: &Path,
 ) -> RunResult<RunSummary> {
     let limit = hook
         .parallel_limit
@@ -180,8 +226,11 @@ async fn run_parallel(
         let sem = semaphore.clone();
         let tx = tx.clone();
         let hook_name = hook_name.clone();
+        let git_lock = git_lock.clone();
+        let worktree = worktree.to_path_buf();
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore closed");
+            let before_unstaged = snapshot_unstaged_if_needed(&job, &worktree).await?;
             let extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name)];
             let mut job_failed = false;
             for cmd in &plan.commands {
@@ -191,6 +240,10 @@ async fn run_parallel(
                     job_failed = true;
                     break;
                 }
+            }
+            if let Some(before) = before_unstaged {
+                let _g = git_lock.lock().await;
+                apply_stage_fixed(&worktree, &before).await?;
             }
             Ok(JobOutcome { failed: job_failed })
         });
@@ -220,6 +273,40 @@ async fn run_parallel(
 
 struct JobOutcome {
     failed: bool,
+}
+
+/// When the job opts into `stage_fixed`, return the set of files that
+/// already had unstaged modifications before the job ran — the delta
+/// after the job is what we need to re-add.
+async fn snapshot_unstaged_if_needed(
+    job: &Job,
+    worktree: &Path,
+) -> RunResult<Option<HashSet<PathBuf>>> {
+    if !job.stage_fixed || job.interactive {
+        return Ok(None);
+    }
+    let files = unstaged_files(worktree).await?;
+    Ok(Some(files.into_iter().collect()))
+}
+
+/// Stage every file that became unstaged *during* the job — the ones
+/// that weren't dirty before. This is the `stage_fixed` semantics:
+/// formatters edit files in-place, and without this step those edits
+/// wouldn't make it into the commit.
+async fn apply_stage_fixed(worktree: &Path, before: &HashSet<PathBuf>) -> RunResult<()> {
+    let after: HashSet<PathBuf> = unstaged_files(worktree).await?.into_iter().collect();
+    let newly: Vec<PathBuf> = after.difference(before).cloned().collect();
+    if newly.is_empty() {
+        return Ok(());
+    }
+    let mut args: Vec<std::ffi::OsString> = Vec::with_capacity(2 + newly.len());
+    args.push("add".into());
+    args.push("--".into());
+    for p in &newly {
+        args.push(p.as_os_str().to_os_string());
+    }
+    run_git(worktree, args).await?;
+    Ok(())
 }
 
 /// Resolve the plan for one job: file set → filter → template expansion.
@@ -432,6 +519,44 @@ mod tests {
             elapsed.as_millis() < 2_000,
             "fail_fast should abort the slow job, elapsed={elapsed:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn stage_fixed_re_stages_job_output() {
+        let (_d, root) = new_git_repo();
+        // Stage a.ts so it's part of the upcoming "commit".
+        std::fs::write(root.join("a.ts"), "before\n").unwrap();
+        let s = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        assert!(s.success());
+
+        // Job simulates a formatter: rewrites a.ts in place.
+        let mut fmt_job = stub_job("fmt", "printf 'after\\n' > a.ts");
+        fmt_job.stage_fixed = true;
+        let hook = stub_hook("pre-commit", vec![fmt_job]);
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(rep.ok);
+
+        // After stage_fixed, `git diff --name-only --cached` should show
+        // a.ts (it's been re-staged with the formatter's output), and
+        // the unstaged diff should be empty.
+        let staged = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["diff", "--name-only", "--cached"])
+            .output()
+            .unwrap();
+        let staged_text = String::from_utf8(staged.stdout).unwrap();
+        assert!(staged_text.contains("a.ts"));
+
+        let unstaged = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["diff", "--name-only"])
+            .output()
+            .unwrap();
+        assert!(unstaged.stdout.is_empty(), "no unstaged remnants");
     }
 
     #[tokio::test]
