@@ -46,7 +46,12 @@ impl WatcherHandle {
     /// glob-style excludes (e.g. `**/target/**`).
     #[must_use]
     pub fn watch(root: &Path, excludes: &[String]) -> Self {
-        let (tx, rx) = mpsc::channel::<WatcherEvent>(1024);
+        // Buffer size matches the output multiplexer. 1024 was
+        // over-buffered: under heavy file churn (an editor save spree)
+        // the speculative runner saw stale state and the daemon RSS
+        // grew without backpressure. 256 gives the sender a ~quarter
+        // second of runway at typical event rates.
+        let (tx, rx) = mpsc::channel::<WatcherEvent>(256);
         let filter = match build_exclude_filter(excludes) {
             Ok(f) => f,
             Err(e) => return Self::disabled_with(vec![], format!("exclude globs invalid: {e}")),
