@@ -63,8 +63,27 @@ cargo run --release --bin <target> < out/<target>/default/crashes/id:000000,*
 ## Smoke test from CI
 
 The repo includes `cargo xtask fuzz-smoke`, which runs every target
-for ~10 seconds against the seed corpus. It's a *bit-rot guard*, not
-a real fuzzing campaign — long runs belong on a dedicated machine.
+against the seed corpus plus an adversarial "interesting bytes" set.
+It's a *bit-rot guard*, not a real fuzzing campaign.
+
+## In-process random fuzzing (no install required)
+
+For immediate exhaustive runs without installing the AFL runtime, the
+repo also ships `cargo xtask fuzz`. It feeds the same harness
+functions a random-mutation stream seeded from the same seed corpus
+as the AFL targets, runs for a wall-clock budget you control, and
+saves any crashing input under `target/fuzz-crashes/`.
+
+```bash
+cargo xtask fuzz                                # 60 s per target
+cargo xtask fuzz --duration 120                 # 2 min per target
+cargo xtask fuzz --target dag_resolver -d 600   # 10 min on one target
+```
+
+A 2-minute run hits >100 million parser invocations across the six
+targets — enough to surface every shallow panic our test surface
+covers. For coverage-guided campaigns past that depth, switch to the
+real AFL path above.
 
 ## Workspace exclusion
 
