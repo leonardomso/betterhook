@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use crate::runner::output::DiagnosticSeverity;
 
 pub mod clippy;
+pub mod eslint;
 pub mod prettier;
 pub mod rustfmt;
 
@@ -67,7 +68,12 @@ pub struct Diagnostic {
 #[must_use]
 pub fn registry() -> BTreeMap<&'static str, BuiltinMeta> {
     let mut map = BTreeMap::new();
-    let items = [rustfmt::meta(), clippy::meta(), prettier::meta()];
+    let items = [
+        rustfmt::meta(),
+        clippy::meta(),
+        prettier::meta(),
+        eslint::meta(),
+    ];
     for m in items {
         map.insert(m.id.0, m);
     }
