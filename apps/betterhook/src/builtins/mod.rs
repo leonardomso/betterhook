@@ -22,6 +22,7 @@ use crate::runner::output::DiagnosticSeverity;
 pub mod clippy;
 pub mod eslint;
 pub mod prettier;
+pub mod ruff;
 pub mod rustfmt;
 
 /// Opaque reference used by `config::Job::builtin = "<name>"`.
@@ -73,6 +74,7 @@ pub fn registry() -> BTreeMap<&'static str, BuiltinMeta> {
         clippy::meta(),
         prettier::meta(),
         eslint::meta(),
+        ruff::meta(),
     ];
     for m in items {
         map.insert(m.id.0, m);
