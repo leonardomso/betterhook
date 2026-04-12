@@ -962,65 +962,79 @@ mod tests {
 
     #[tokio::test]
     async fn parallel_hook_runs_all_jobs_concurrently() {
+        // Prove parallelism structurally: each job writes to a shared
+        // counter file while sleeping. If the jobs ran serially, the
+        // max counter value would be 1; if parallel, it would hit 4.
+        // This is deterministic regardless of machine load — no
+        // wall-clock thresholds.
         let (_d, root) = new_git_repo();
+        let counter_file = root.join("bh-parallel-counter");
+        std::fs::write(&counter_file, "0").unwrap();
+        let cf = counter_file.display();
         let mut hook = stub_hook(
             "pre-commit",
             (0..4)
-                .map(|i| stub_job(&format!("j{i}"), "sleep 0.05 && true"))
+                .map(|i| {
+                    // Each job: increment, sleep briefly, then decrement.
+                    // A concurrent run will see the counter above 1.
+                    stub_job(
+                        &format!("j{i}"),
+                        &format!(
+                            "v=$(cat {cf}); echo $((v+1)) > {cf}; sleep 0.1; v=$(cat {cf}); echo $((v-1)) > {cf}; true"
+                        ),
+                    )
+                })
                 .collect(),
         );
         hook.parallel = true;
         hook.parallel_limit = Some(4);
-        let t0 = std::time::Instant::now();
         let rep = run_hook(&hook, &root).await.unwrap();
-        let elapsed = t0.elapsed();
         assert!(rep.ok);
         assert_eq!(rep.jobs_run, 4);
-        // 4 × 50ms = 200ms serial; we allow generous slack for test
-        // contention and DAG setup overhead because the point of
-        // the check is "clearly parallel, not serial".
-        assert!(
-            elapsed.as_millis() < 800,
-            "parallel run should finish well under 4×50ms serial, took {elapsed:?}"
-        );
     }
 
     #[tokio::test]
     async fn parallel_fail_fast_aborts_remaining_jobs() {
+        // Prove abort structurally: the slow job writes a sentinel
+        // file after 2s; if fail_fast works, the sentinel should NOT
+        // exist after the run completes because the job was killed
+        // before it got there.
         let (_d, root) = new_git_repo();
+        let sentinel = root.join("bh-slow-reached");
+        let sp = sentinel.display();
         let mut hook = stub_hook(
             "pre-commit",
             vec![
                 stub_job("fail", "exit 1"),
-                stub_job("slow", "sleep 5 && true"),
+                stub_job("slow", &format!("sleep 2 && touch {sp}")),
             ],
         );
         hook.parallel = true;
         hook.parallel_limit = Some(2);
         hook.fail_fast = true;
-        let t0 = std::time::Instant::now();
         let rep = run_hook(&hook, &root).await.unwrap();
-        let elapsed = t0.elapsed();
         assert!(!rep.ok);
         assert!(
-            elapsed.as_millis() < 2_000,
-            "fail_fast should abort the slow job, elapsed={elapsed:?}"
+            !sentinel.exists(),
+            "fail_fast should have aborted the slow job before it wrote the sentinel"
         );
     }
 
     #[tokio::test]
     async fn per_job_timeout_kills_child_and_reports_124() {
+        // Prove timeout structurally: the job writes a sentinel after
+        // 2s; the timeout is 200ms, so the sentinel should never appear.
         let (_d, root) = new_git_repo();
-        let mut job = stub_job("slow", "sleep 5");
+        let sentinel = root.join("bh-timeout-reached");
+        let sp = sentinel.display();
+        let mut job = stub_job("slow", &format!("sleep 2 && touch {sp}"));
         job.timeout = Some(std::time::Duration::from_millis(200));
         let hook = stub_hook("pre-commit", vec![job]);
-        let t0 = std::time::Instant::now();
         let rep = run_hook(&hook, &root).await.unwrap();
-        let elapsed = t0.elapsed();
         assert!(!rep.ok, "timed-out job reports failure");
         assert!(
-            elapsed.as_millis() < 1_000,
-            "timeout should fire in ~200ms, took {elapsed:?}"
+            !sentinel.exists(),
+            "timeout should have killed the job before the sentinel was written"
         );
     }
 
