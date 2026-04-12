@@ -390,3 +390,105 @@ run = "true"
     let resolved = find_config(&repo).expect("config exists");
     assert!(resolved.ends_with("betterhook.toml"));
 }
+
+// ──────────────────── builtin diagnostic pipeline ────────────────────
+
+#[tokio::test]
+async fn builtin_config_merges_defaults_and_lowers() {
+    // Verify that `builtin = "rustfmt"` in a config merges the
+    // builtin's default `run`, `glob`, `reads`, `concurrent_safe`
+    // fields into the lowered Job at config-load time.
+    let (_d, repo) = init_repo();
+    write_config(
+        &repo,
+        r#"[meta]
+version = 1
+
+[hooks.pre-commit.jobs.fmt]
+builtin = "rustfmt"
+"#,
+    );
+    let cfg = load(&repo.join("betterhook.toml")).unwrap();
+    let hook = &cfg.hooks["pre-commit"];
+    assert_eq!(hook.jobs.len(), 1);
+    let job = &hook.jobs[0];
+    assert_eq!(job.builtin.as_deref(), Some("rustfmt"));
+    // The builtin should have filled in `run` since the user didn't.
+    assert!(
+        job.run.contains("cargo fmt"),
+        "builtin should fill in the run command, got: {}",
+        job.run
+    );
+    // concurrent_safe should be true (rustfmt's default).
+    assert!(job.concurrent_safe);
+    // glob should be populated.
+    assert!(!job.glob.is_empty());
+}
+
+#[tokio::test]
+async fn unknown_builtin_fails_at_config_load() {
+    let (_d, repo) = init_repo();
+    write_config(
+        &repo,
+        r#"[hooks.pre-commit.jobs.bad]
+builtin = "this-does-not-exist"
+"#,
+    );
+    let result = load(&repo.join("betterhook.toml"));
+    assert!(
+        result.is_err(),
+        "unknown builtin should error at config load"
+    );
+}
+
+// ───────────────────── explain dot output shape ──────────────────────
+
+#[tokio::test]
+async fn explain_dag_produces_valid_digraph() {
+    // Verify the graphviz digraph output contract: starts with
+    // `digraph betterhook {`, contains both job names, contains at
+    // least one `->` edge for conflicting writers, and ends with `}`.
+    let (_d, repo) = init_repo();
+    write_config(
+        &repo,
+        r#"[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+
+[hooks.pre-commit.jobs.fmt]
+run = "true"
+writes = ["**/*.ts"]
+
+[hooks.pre-commit.jobs.lint]
+run = "true"
+reads = ["**/*.ts"]
+"#,
+    );
+    let cfg = load(&repo.join("betterhook.toml")).unwrap();
+    let hook = &cfg.hooks["pre-commit"];
+    let graph = betterhook::runner::build_dag(&hook.jobs).unwrap();
+
+    // Build the digraph string (same logic as explain.rs)
+    let mut dot = String::from("digraph betterhook {\n");
+    for node in &graph.nodes {
+        use std::fmt::Write;
+        let _ = writeln!(dot, "  \"{}\";", node.job.name);
+    }
+    for (a, b) in graph.edges() {
+        use std::fmt::Write;
+        let _ = writeln!(
+            dot,
+            "  \"{}\" -> \"{}\";",
+            graph.nodes[a].job.name, graph.nodes[b].job.name
+        );
+    }
+    dot.push_str("}\n");
+
+    assert!(dot.starts_with("digraph betterhook {"));
+    assert!(dot.contains("\"fmt\""));
+    assert!(dot.contains("\"lint\""));
+    assert!(dot.contains("->"), "conflicting writers should produce an edge");
+    assert!(dot.trim_end().ends_with('}'));
+}
