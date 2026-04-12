@@ -2,21 +2,11 @@
   "name": "betterhook-monorepo",
   "version": "0.0.2",
   "private": true,
-  "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "build": "turbo run build",
-    "test": "turbo run test",
-    "lint": "turbo run lint",
-    "bench": "turbo run bench",
-    "docs:dev": "turbo run dev --filter=@betterhook/docs",
-    "docs:check": "turbo run check --filter=@betterhook/docs",
+    "build": "cargo build --workspace",
+    "test": "cargo test --workspace",
+    "lint": "cargo clippy --workspace --all-targets -- -D warnings",
     "fmt": "cargo fmt --all",
     "fmt:check": "cargo fmt --all -- --check"
-  },
-  "devDependencies": {
-    "turbo": "^2.9.6"
-  },
-  "engines": {
-    "node": ">=20"
   }
 }

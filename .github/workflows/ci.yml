@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: build-${{ matrix.os }}
+  check:
+    name: check-${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -20,31 +20,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: pnpm install --frozen-lockfile
-
       - name: rustfmt
         run: cargo fmt --all -- --check
 
-      - name: build
-        run: pnpm run build
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: lint
-        run: pnpm run lint
+      - name: build
+        run: cargo build --workspace
 
       - name: test
-        run: pnpm run test
+        run: cargo test --workspace
