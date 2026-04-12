@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "betterhook"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bincode",
  "blake3",
@@ -173,7 +173,7 @@ dependencies = [
 
 [[package]]
 name = "betterhook-cli"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "betterhook",
  "clap",
@@ -2226,7 +2226,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "betterhook",
 ]
