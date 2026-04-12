@@ -49,9 +49,14 @@ The workflow most teams are moving to: multiple coding agents running in paralle
 
 - **Worktree-native dispatch.** A single byte-identical wrapper lives in the shared `.git/hooks/` dir. At commit time it runs `git rev-parse --show-toplevel`, resolves the current worktree, and dispatches to *that* worktree's own `betterhook.toml`. Every worktree runs its own config through the same wrapper — the exact property lefthook cannot provide.
 - **Streaming, not buffered.** Every subprocess line goes through a Tokio multiplexer the instant it's emitted. Output renders live; memory stays constant regardless of how chatty a job gets.
-- **Coordinator daemon** (`betterhookd`, opt-in). Per-tool mutexes, sharded semaphores, and automatic `CARGO_TARGET_DIR` injection so concurrent cargo builds in sibling worktrees never collide on the shared `target/` directory. Falls back to `fs4` advisory flock when the daemon can't start.
-- **Built-in agent affordances.** NDJSON `--json` output, `betterhook status`, `betterhook explain`, `betterhook fix`, a stable exit-code contract, and machine-readable errors.
-- **Rescue path.** `betterhook migrate --from lefthook.yml` produces a best-effort TOML conversion alongside a markdown notes file listing exactly what changed.
+- **Capability DAG scheduler.** Jobs declare `reads`, `writes`, `network`, `concurrent_safe`. The runner builds a real dependency graph and runs every root in parallel — only conflicting pairs serialize.
+- **Content-addressable hook cache.** A cache hit skips the subprocess entirely and replays captured output events. Keyed on `blake3(content) + blake3(tool_binary) + blake3(args)` with mise/nvm-aware tool resolution.
+- **Speculative execution.** The coordinator daemon watches the worktree, prewarms `concurrent_safe` jobs on save, and the commit-time runner just hits the cache.
+- **12 builtin linter wrappers.** `builtin = "rustfmt"` in your config merges defaults and parses the tool's native output into structured `Diagnostic` events on the NDJSON stream.
+- **Coordinator daemon** (opt-in). Per-tool mutexes, sharded semaphores, and automatic `CARGO_TARGET_DIR` injection so concurrent cargo builds in sibling worktrees never collide. Persistent via launchd (macOS) or systemd (Linux). Falls back to `fs4` advisory flock when the daemon can't start.
+- **Built-in agent affordances.** NDJSON `--json` output, `betterhook status`, `betterhook explain --format dot|svg`, `betterhook fix`, a stable exit-code contract, and machine-readable errors.
+- **`betterhook doctor`** health check. Walks the install manifest, config parse, builtin tools on PATH, cache writability, watcher health, orphan stashes, and conflicting `core.hooksPath`.
+- **`betterhook import --from <lefthook|husky|hk|pre-commit>`** converts another hook manager's config in one command.
 
 ---
 
@@ -60,15 +65,20 @@ The workflow most teams are moving to: multiple coding agents running in paralle
 |                                               | betterhook | lefthook    | husky    | pre-commit |
 |-----------------------------------------------|:----------:|:-----------:|:--------:|:----------:|
 | Worktree-aware install                        | yes        | **no**      | no       | no         |
+| Capability DAG scheduler                      | yes        | no          | no       | no         |
+| Content-addressable hook cache                | yes        | no          | no       | no         |
+| Speculative on-save pre-run                   | yes        | no          | no       | no         |
+| 12 builtin structured linter wrappers         | yes        | no          | no       | partial    |
 | Line-streaming subprocess output              | yes        | buffered    | partial  | buffered   |
-| Priority-ordered parallel scheduler           | yes        | **no** (#846) | no     | no         |
 | Cross-worktree tool coordinator               | yes (opt-in) | **no**    | no       | no         |
 | Automatic `CARGO_TARGET_DIR` per worktree     | yes        | no          | no       | no         |
 | Untracked-file stash safety                   | yes        | **broken** (#833) | no | via script  |
-| NDJSON output for agents                      | yes        | no          | no       | no         |
-| Multi-format config (TOML + YAML + JSON)      | yes        | YAML only   | JS only  | YAML only  |
+| NDJSON + structured diagnostics for agents    | yes        | no          | no       | no         |
+| Multi-format config (TOML + YAML + KDL + JSON)| yes        | YAML only   | JS only  | YAML only  |
+| Import from other tools                       | 4 sources  | no          | no       | no         |
+| Health check (`doctor`)                       | yes        | no          | no       | no         |
 | Binary size                                    | ~6 MB      | ~15 MB      | (node)   | (python)   |
-| Cold start                                     | ~50 ms     | ~100 ms     | slower   | slowest    |
+| Cold start                                     | ~30 ms     | ~100 ms     | slower   | slowest    |
 | Runtime required                               | none       | none        | Node.js  | Python     |
 
 ---
