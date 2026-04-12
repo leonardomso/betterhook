@@ -13,10 +13,9 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
-# Node / turborepo
+# Node / bun
 node_modules
-.turbo
-.pnpm-store
+bun.lockb
 
 # Local betterhook overrides (tracked-gitignored)
 betterhook.local.toml

@@ -12,7 +12,7 @@ For documentation, source code, and issue tracking, visit
 ```sh
 npm install -g betterhook
 # or
-pnpm add -g betterhook
+bun add -g betterhook
 ```
 
 ## Supported platforms

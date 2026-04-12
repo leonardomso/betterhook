@@ -7,7 +7,7 @@ merged.
 ## Prerequisites
 
 - **Rust 1.86+** (edition 2024). Install via [rustup](https://rustup.rs).
-- **pnpm 10+** for the Mintlify docs and the Turbo monorepo scripts.
+- **bun 10+** for the Mintlify docs and the Turbo monorepo scripts.
 - **Node 20+** for the docs dev server.
 - **git** (any recent version).
 
@@ -32,8 +32,8 @@ cargo fmt --all -- --check       # formatting check
 The docs site:
 
 ```bash
-pnpm install
-pnpm run docs:dev                # local Mintlify preview
+bun install
+bun run docs:dev                # local Mintlify preview
 ```
 
 ## Fuzzing

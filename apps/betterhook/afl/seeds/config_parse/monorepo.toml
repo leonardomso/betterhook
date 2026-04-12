@@ -8,4 +8,4 @@ path = "apps/web"
 path = "services/api"
 
 [packages.frontend.hooks.pre-commit.jobs.lint]
-run = "pnpm -F frontend lint"
+run = "bun run --filter frontend lint"

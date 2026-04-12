@@ -33,7 +33,7 @@ concurrent_safe = true
 # path = \"apps/web\"
 #
 # [packages.web.hooks.pre-commit.jobs.lint]
-# run = \"pnpm -F web lint\"
+# run = \"bun run --filter web lint\"
 # reads = [\"apps/web/**\"]
 # concurrent_safe = true
 ";

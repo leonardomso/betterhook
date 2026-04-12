@@ -1,0 +1,9 @@
+
+> @betterhook/core@0.0.1 build /Users/leonardomaldonado/conductor/workspaces/betterhook/montevideo/apps/betterhook
+> cargo build -p betterhook
+
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+   Compiling betterhook v0.0.1 (/Users/leonardomaldonado/conductor/workspaces/betterhook/montevideo/apps/betterhook)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.55s

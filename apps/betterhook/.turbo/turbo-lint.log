@@ -1,0 +1,28 @@
+
+> @betterhook/core@0.0.1 lint /Users/leonardomaldonado/conductor/workspaces/betterhook/montevideo/apps/betterhook
+> cargo clippy -p betterhook -- -D warnings
+
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Checking serde_core v1.0.228
+    Checking regex-syntax v0.8.10
+    Checking winnow v1.0.1
+    Checking toml_writer v1.1.1+spec-1.1.0
+    Checking toml_parser v1.1.2+spec-1.1.0
+    Checking regex-automata v0.4.14
+    Checking serde v1.0.228
+    Checking toml_datetime v1.1.1+spec-1.1.0
+    Checking serde_json v1.0.149
+    Checking serde_spanned v1.1.1
+    Checking semver v1.0.28
+    Checking toml v1.1.2+spec-1.1.0
+    Checking tracing-serde v0.2.0
+    Checking humantime-serde v1.1.1
+    Checking serde_yaml_ng v0.10.0
+    Checking bincode v2.0.1
+    Checking matchers v0.2.0
+    Checking globset v0.4.18
+    Checking tracing-subscriber v0.3.23
+    Checking betterhook v0.0.1 (/Users/leonardomaldonado/conductor/workspaces/betterhook/montevideo/apps/betterhook)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.30s

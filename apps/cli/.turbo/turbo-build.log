@@ -1,0 +1,5 @@
+
+> @betterhook/cli@0.0.1 build /Users/leonardomaldonado/conductor/workspaces/betterhook/montevideo/apps/cli
+> cargo build -p betterhook-cli
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.43s

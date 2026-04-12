@@ -5,13 +5,9 @@ Mintlify documentation site for betterhook. Deploys to Mintlify.
 ## Local preview
 
 ```sh
-# from the repo root
-pnpm install
-pnpm --filter @betterhook/docs run dev
-
-# or directly
 cd apps/docs
-mint dev
+bun install
+bun run dev
 ```
 
 Opens http://localhost:3000 with hot reload.
@@ -19,7 +15,8 @@ Opens http://localhost:3000 with hot reload.
 ## Check links
 
 ```sh
-pnpm --filter @betterhook/docs run check
+cd apps/docs
+bun run check
 ```
 
 ## Structure

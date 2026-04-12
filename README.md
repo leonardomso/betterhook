@@ -348,22 +348,17 @@ Run `cargo run -p xtask -- bench` to measure on your machine.
 
 ## Development
 
-Rust 1.86+, pnpm 10+, and standard git. All orchestration goes through either cargo directly or the turborepo pipeline.
+Rust 1.86+ and standard git. [Bun](https://bun.sh) is used for the docs site only.
 
 ```sh
-# Install turbo
-pnpm install
-
-# Build + test + lint through the turbo pipeline
-pnpm run build
-pnpm run test
-pnpm run lint
-
-# Or straight cargo
+# Build + test + lint
 cargo build --workspace
-cargo test -p betterhook
+cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
+
+# Docs site (requires bun)
+cd apps/docs && bun install && bun run dev
 
 # Benchmarks (criterion + hyperfine)
 cargo run -p xtask -- bench
