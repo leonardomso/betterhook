@@ -309,12 +309,10 @@ betterhook/
 │   │   ├── tests/         # integration + linked-worktree tests
 │   │   └── fuzz/          # cargo-fuzz targets
 │   └── cli/               # the `betterhook` CLI (thin clap frontend)
-├── xtask/                 # bench + stress + lefthook-compat harness
-├── docs/protocol.md       # daemon IPC wire format
-├── man/betterhook.1       # man page
+├── xtask/                 # bench + stress + fuzz harness
+├── packaging/             # Homebrew formula + npm wrapper scaffolds
 ├── Cargo.toml             # cargo workspace
-├── turbo.json             # turborepo pipeline
-└── package.json           # turbo root
+└── package.json           # root scripts
 ```
 
 ### How a hook actually fires
@@ -327,7 +325,7 @@ betterhook/
 6. If the hook has jobs, the runner spawns them (sequential or parallel), streams output line by line through the multiplexer, acquires coordinator locks for any job with `isolate = ...`, applies `stage_fixed`, and reports.
 7. Non-zero exit on any job blocks the commit.
 
-Steps 3–5 are the part lefthook cannot get right. See [`docs/protocol.md`](docs/protocol.md) for the daemon wire format and [`CHANGELOG.md`](CHANGELOG.md) for a phase-by-phase implementation history.
+Steps 3–5 are the part lefthook cannot get right. See the [protocol reference](https://betterhook.dev/reference/protocol) for the daemon wire format and [`CHANGELOG.md`](CHANGELOG.md) for the implementation history.
 
 ### Performance targets
 
@@ -376,8 +374,7 @@ All commits follow [conventional commits](https://www.conventionalcommits.org/).
 
 ## Documentation
 
-- [`docs/protocol.md`](docs/protocol.md) — daemon IPC wire format (for Conductor and third-party agent harnesses)
-- [`man/betterhook.1`](man/betterhook.1) — man page
+- [betterhook.dev](https://betterhook.dev) — full Mintlify docs (commands, architecture, reference)
 - [`CHANGELOG.md`](CHANGELOG.md) — release history + known gaps
 - `betterhook --help` — per-subcommand reference
 

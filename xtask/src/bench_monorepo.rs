@@ -7,7 +7,7 @@
 //! whole run, so an OSS contributor without those tools installed can
 //! still benchmark our cold/warm path against itself.
 //!
-//! Outputs a Markdown table to `docs/bench-results.md` plus the same
+//! Outputs a Markdown table to `target/bench-results.md` plus the same
 //! payload as JSON on stdout for CI consumption.
 
 use std::fmt::Write as _;
@@ -62,10 +62,10 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 
     let table = render_table(total_files, &rows);
-    if let Err(e) = std::fs::write("docs/bench-results.md", &table) {
-        eprintln!("bench-monorepo: failed to write docs/bench-results.md: {e}");
+    if let Err(e) = std::fs::write("target/bench-results.md", &table) {
+        eprintln!("bench-monorepo: failed to write target/bench-results.md: {e}");
     } else {
-        eprintln!("bench-monorepo: wrote docs/bench-results.md");
+        eprintln!("bench-monorepo: wrote target/bench-results.md");
     }
     println!("{table}");
 
