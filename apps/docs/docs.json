@@ -76,6 +76,7 @@
               "commands/cache",
               "commands/builtins",
               "commands/doctor",
+              "commands/import",
               "commands/migrate"
             ]
           },

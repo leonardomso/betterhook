@@ -1,8 +1,14 @@
 ---
-title: "betterhook migrate"
-description: "Convert a lefthook.yml to betterhook.toml with migration notes."
+title: "betterhook migrate (deprecated)"
+description: "Hidden alias for `betterhook import --from-format lefthook`."
 icon: "arrow-right-left"
 ---
+
+<Warning>
+  `betterhook migrate` is deprecated and will be removed in a future
+  release. Use [`betterhook import`](/commands/import) instead, which
+  supports lefthook, husky, hk, and pre-commit.
+</Warning>
 
 ```sh
 betterhook migrate [--from lefthook.yml] [--to betterhook.toml] [--notes BETTERHOOK_MIGRATION_NOTES.md] [--force]
