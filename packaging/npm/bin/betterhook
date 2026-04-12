@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+// Thin wrapper that execs the native binary downloaded by install.js.
+const { execFileSync } = require("child_process");
+const path = require("path");
+
+const binary = path.join(__dirname, "betterhook");
+try {
+  execFileSync(binary, process.argv.slice(2), { stdio: "inherit" });
+} catch (err) {
+  process.exit(err.status || 1);
+}

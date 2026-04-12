@@ -1,0 +1,26 @@
+{
+  "name": "betterhook",
+  "version": "0.0.2",
+  "description": "Memory-efficient, worktree-native git hooks manager built for the AI agent era.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leonardomso/betterhook"
+  },
+  "bin": {
+    "betterhook": "bin/betterhook"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": ["darwin", "linux"],
+  "cpu": ["x64", "arm64"],
+  "files": [
+    "bin/",
+    "install.js",
+    "README.md"
+  ]
+}
