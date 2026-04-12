@@ -5,7 +5,7 @@ icon: "eye"
 ---
 
 ```sh
-betterhook explain --hook <name> [--job <name>] [--worktree <path>]
+betterhook explain --hook <name> [--job <name>] [--worktree <path>] [--format json|dot|svg]
 ```
 
 Returns a JSON snapshot of every resolved job in the named hook: the exact
@@ -27,8 +27,27 @@ making a commit.
 <ParamField path="--worktree" type="path" default=".">
   Which worktree root to inspect.
 </ParamField>
+<ParamField path="--format" type="string" default="json">
+  Output format. `json` (default) prints the full resolved plan. `dot`
+  emits a standalone [graphviz](https://graphviz.org/) digraph of the
+  capability DAG. `svg` pipes the digraph through `dot -Tsvg` (requires
+  graphviz on PATH).
+</ParamField>
 
-## Example
+## Visualizing the DAG
+
+```sh
+# Save as a .dot file
+betterhook explain --hook pre-commit --format dot > dag.dot
+
+# Render directly to PNG (requires graphviz)
+betterhook explain --hook pre-commit --format dot | dot -Tpng -o dag.png
+
+# Or let betterhook call dot for you
+betterhook explain --hook pre-commit --format svg > dag.svg
+```
+
+## Example (JSON)
 
 ```sh
 $ betterhook explain --hook pre-commit --job lint
