@@ -4,12 +4,12 @@ All notable changes to betterhook. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this
 project adheres to [semantic versioning](https://semver.org/).
 
-## [1.0.1] - 2026-04-11
+## [0.0.2] - 2026-04-12
 
 Code-quality release. No new features and no schema changes — every
 change preserves behavior except the async correctness fixes (which
 make the commit-time path genuinely faster under parallel load) and
-the perf wins that earn the "warm cache hit < 5 ms" v1 claim. 220
+the perf wins that earn the "warm cache hit < 5 ms" claim. 220
 tests pass; 231 million fuzz iterations pass across six targets.
 
 ### Fixed
@@ -107,9 +107,9 @@ tests pass; 231 million fuzz iterations pass across six targets.
 - `cargo xtask fuzz --duration 30` — 231,038,414 iterations across
   6 targets, 0 panics.
 
-## [1.0.0] - 2026-04-11
+## [0.0.2-alpha.1] - 2026-04-11
 
-The first launch release. Adds the capability DAG scheduler, the
+The feature-complete pre-release. Adds the capability DAG scheduler, the
 content-addressable hook cache, on-save speculative execution, monorepo
 package blocks, KDL config support, persistent per-repo daemons via
 launchd / systemd, twelve builtin linter wrappers with structured JSON
@@ -205,7 +205,7 @@ the `betterhookd` entry point is gone in favor of a hidden
   `docs/bench-results.md`.
 - `xtask stress` runs the 8-worktree concurrent `cargo fmt` race
   the CEO plan calls out as the headline demo.
-- v1 launch docs (`docs/launch/hn-post.md`,
+- Launch docs (`docs/launch/hn-post.md`,
   `docs/launch/demo-script.md`) plus updated Mintlify pages.
 
 ### Changed
