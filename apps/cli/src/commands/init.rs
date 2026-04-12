@@ -3,21 +3,39 @@ use std::path::PathBuf;
 use miette::{IntoDiagnostic, WrapErr, miette};
 
 const STARTER_TOML: &str = "\
-# betterhook config
-# See https://github.com/leonardomso/betterhook for documentation.
+# betterhook config — https://github.com/leonardomso/betterhook
+#
+# Capability fields (reads, writes, concurrent_safe) enable the DAG
+# scheduler and the content-addressable cache. Jobs that declare them
+# run in parallel automatically; jobs that don't are serialized safely.
 
 [meta]
 version = 1
 
 [hooks.pre-commit]
 parallel = true
-priority = [\"fmt\", \"lint\"]
 
+# Use a builtin for one-line setup. Builtins fill in the run command,
+# glob, capability fields, and fix variant automatically.
 [hooks.pre-commit.jobs.fmt]
-run = \"cargo fmt --all -- --check\"
+builtin = \"rustfmt\"
 
+# Or declare everything manually for full control.
 [hooks.pre-commit.jobs.lint]
-run = \"cargo clippy --workspace -- -D warnings\"
+run = \"cargo clippy --workspace --all-targets -- -D warnings\"
+glob = [\"*.rs\"]
+reads = [\"**/*.rs\", \"**/Cargo.toml\"]
+writes = []
+concurrent_safe = true
+
+# Monorepo? Uncomment and add per-package hooks:
+# [packages.web]
+# path = \"apps/web\"
+#
+# [packages.web.hooks.pre-commit.jobs.lint]
+# run = \"pnpm -F web lint\"
+# reads = [\"apps/web/**\"]
+# concurrent_safe = true
 ";
 
 #[derive(Debug, clap::Args)]
