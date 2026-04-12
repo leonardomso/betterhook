@@ -256,6 +256,7 @@ mod hook_merge_tests {
             writes: Vec::new(),
             network: false,
             concurrent_safe: false,
+            builtin: None,
         }
     }
 

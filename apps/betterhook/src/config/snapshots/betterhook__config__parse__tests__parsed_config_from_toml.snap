@@ -45,6 +45,7 @@ Config {
                     writes: [],
                     network: false,
                     concurrent_safe: false,
+                    builtin: None,
                 },
                 Job {
                     name: "test",
@@ -72,6 +73,7 @@ Config {
                     writes: [],
                     network: false,
                     concurrent_safe: false,
+                    builtin: None,
                 },
             ],
         },

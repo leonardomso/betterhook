@@ -300,6 +300,7 @@ mod tests {
             writes: Vec::new(),
             network: false,
             concurrent_safe,
+            builtin: None,
         }
     }
 

@@ -123,6 +123,13 @@ pub struct RawJob {
     pub network: Option<bool>,
     #[serde(default)]
     pub concurrent_safe: Option<bool>,
+
+    /// Reference to a registered builtin (e.g. `"rustfmt"`, `"eslint"`).
+    /// When present, the builtin's defaults are merged under the user's
+    /// explicit fields at lower time, and the runner pipes subprocess
+    /// output through the builtin's parser to emit `Diagnostic` events.
+    #[serde(default)]
+    pub builtin: Option<String>,
 }
 
 /// Raw, serde-friendly isolation spec.
@@ -228,6 +235,12 @@ pub struct Job {
     /// from the daemon watcher (phases 37-39). Safe means: no
     /// network, no writes that touch unrelated files, idempotent.
     pub concurrent_safe: bool,
+    /// If set, names a registered builtin whose `parse_output` is
+    /// called on the subprocess stdout to emit structured `Diagnostic`
+    /// events alongside the raw line output. The builtin's defaults
+    /// were already merged at lower time; this field tells the runner
+    /// *which* parser to use at execution time.
+    pub builtin: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -347,7 +360,43 @@ fn lower_hook(name: &str, raw: RawHook) -> ConfigResult<Hook> {
     })
 }
 
-fn lower_job(name: &str, raw: RawJob, priority: u32) -> ConfigResult<Job> {
+fn lower_job(name: &str, mut raw: RawJob, priority: u32) -> ConfigResult<Job> {
+    // If a builtin is referenced, merge its defaults under the user's
+    // explicit fields. User values always win; the builtin fills in
+    // anything the user didn't set.
+    let builtin_name = raw.builtin.clone();
+    if let Some(ref id) = builtin_name {
+        if let Some(meta) = crate::builtins::get(id) {
+            if raw.run.is_none() {
+                raw.run = Some(meta.run.to_owned());
+            }
+            if raw.fix.is_none() {
+                raw.fix = meta.fix.map(str::to_owned);
+            }
+            if raw.glob.is_empty() {
+                raw.glob = meta.glob.iter().map(|s| (*s).to_owned()).collect();
+            }
+            if raw.reads.is_empty() {
+                raw.reads = meta.reads.iter().map(|s| (*s).to_owned()).collect();
+            }
+            if raw.writes.is_empty() {
+                raw.writes = meta.writes.iter().map(|s| (*s).to_owned()).collect();
+            }
+            if raw.network.is_none() {
+                raw.network = Some(meta.network);
+            }
+            if raw.concurrent_safe.is_none() {
+                raw.concurrent_safe = Some(meta.concurrent_safe);
+            }
+        } else {
+            return Err(ConfigError::Invalid {
+                message: format!(
+                    "job '{name}' references unknown builtin '{id}'; run `betterhook builtins list` for available builtins"
+                ),
+            });
+        }
+    }
+
     let run = raw.run.ok_or_else(|| ConfigError::Invalid {
         message: format!("job '{name}' is missing a 'run' command"),
     })?;
@@ -369,10 +418,6 @@ fn lower_job(name: &str, raw: RawJob, priority: u32) -> ConfigResult<Job> {
         .map(|raw_iso| lower_isolate(name, raw_iso))
         .transpose()?;
 
-    // Validate reads/writes globs up-front so syntax errors surface
-    // at config-load time with a miette diagnostic instead of at DAG
-    // build time in the runner. We throw the compiled GlobSet away;
-    // phase 26 compiles them again when building the DAG.
     for pat in raw.reads.iter().chain(raw.writes.iter()) {
         globset::Glob::new(pat).map_err(|e| ConfigError::Invalid {
             message: format!("job '{name}' has an invalid capability glob '{pat}': {e}"),
@@ -400,6 +445,7 @@ fn lower_job(name: &str, raw: RawJob, priority: u32) -> ConfigResult<Job> {
         writes: raw.writes,
         network: raw.network.unwrap_or(false),
         concurrent_safe: raw.concurrent_safe.unwrap_or(false),
+        builtin: builtin_name,
     })
 }
 
@@ -504,6 +550,7 @@ impl RawJob {
         take_if_some!(fail_text);
         take_if_some!(network);
         take_if_some!(concurrent_safe);
+        take_if_some!(builtin);
         if !overlay.glob.is_empty() {
             self.glob = overlay.glob;
         }

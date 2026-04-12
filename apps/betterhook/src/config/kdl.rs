@@ -172,6 +172,7 @@ fn parse_job(node: &KdlNode) -> ConfigResult<(String, RawJob)> {
             "writes" => job.writes = all_positional_strings(child),
             "network" => job.network = first_positional_bool(child),
             "concurrent_safe" => job.concurrent_safe = first_positional_bool(child),
+            "builtin" => job.builtin = first_positional_string(child),
             "env" => {
                 // `env KEY="value" OTHER="value"` — all properties.
                 for entry in child.entries() {

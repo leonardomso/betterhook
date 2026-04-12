@@ -583,6 +583,14 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
     drop(local_tx);
     let captured = tee.await.unwrap_or_default();
 
+    // If this job references a builtin, parse the captured stdout lines
+    // through the builtin's parser and emit Diagnostic events. This is
+    // what makes `--json` output structured for agents — the raw line
+    // stream is augmented with typed file/line/severity diagnostics.
+    if let Some(ref builtin_id) = job.builtin {
+        emit_builtin_diagnostics(builtin_id, &job.name, &captured, &tx).await;
+    }
+
     if let Some(before) = before_unstaged {
         apply_stage_fixed(&worktree, &before, &git_lock).await?;
     }
@@ -603,6 +611,68 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
     }
 
     Ok(JobOutcome { failed: job_failed })
+}
+
+/// Collect all stdout/stderr lines from the captured events, feed them
+/// through the builtin's `parse_output`, and emit one `Diagnostic`
+/// event per finding.
+async fn emit_builtin_diagnostics(
+    builtin_id: &str,
+    job_name: &str,
+    captured: &[OutputEvent],
+    tx: &mpsc::Sender<OutputEvent>,
+) {
+    let Some(meta) = crate::builtins::get(builtin_id) else {
+        return;
+    };
+    // Rebuild the raw stdout. The builtin parsers expect the full output
+    // as a single string — they handle line splitting themselves.
+    let mut stdout = String::new();
+    for ev in captured {
+        if let OutputEvent::Line {
+            stream: super::output::Stream::Stdout,
+            line,
+            ..
+        } = ev
+        {
+            stdout.push_str(line);
+            stdout.push('\n');
+        }
+    }
+    if stdout.is_empty() {
+        return;
+    }
+    let diags = match builtin_id {
+        "rustfmt" => crate::builtins::rustfmt::parse_output(&stdout),
+        "clippy" => crate::builtins::clippy::parse_output(&stdout),
+        "prettier" => crate::builtins::prettier::parse_output(&stdout),
+        "eslint" => crate::builtins::eslint::parse_output(&stdout),
+        "ruff" => crate::builtins::ruff::parse_output(&stdout),
+        "black" => crate::builtins::black::parse_output(&stdout),
+        "gofmt" => crate::builtins::gofmt::parse_output(&stdout),
+        "govet" => crate::builtins::govet::parse_output(&stdout),
+        "biome" => crate::builtins::biome::parse_output(&stdout),
+        "oxlint" => crate::builtins::oxlint::parse_output(&stdout),
+        "shellcheck" => crate::builtins::shellcheck::parse_output(&stdout),
+        "gitleaks" => crate::builtins::gitleaks::parse_output(&stdout),
+        _ => return,
+    };
+    // `meta` is a `BuiltinMeta` with no Drop — the `get()` result was
+    // only needed to confirm the builtin exists. Let `_` discard it.
+    let _ = meta;
+    for d in diags {
+        let _ = tx
+            .send(OutputEvent::Diagnostic {
+                job: job_name.to_owned(),
+                file: d.file,
+                line: d.line,
+                column: d.column,
+                severity: d.severity,
+                message: d.message,
+                rule: d.rule,
+            })
+            .await;
+    }
 }
 
 /// If `job` declares an `isolate` spec, acquire the appropriate lock
@@ -816,6 +886,7 @@ mod tests {
             writes: Vec::new(),
             network: false,
             concurrent_safe: false,
+            builtin: None,
         }
     }
 

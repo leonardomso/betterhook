@@ -255,6 +255,7 @@ mod tests {
             writes: writes.iter().map(|s| (*s).to_owned()).collect(),
             network: false,
             concurrent_safe: false,
+            builtin: None,
         }
     }
 

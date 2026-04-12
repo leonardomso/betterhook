@@ -227,6 +227,7 @@ async fn cache_round_trip_keeps_first_run_and_invalidates_on_change() {
         writes: vec![],
         network: false,
         concurrent_safe: true,
+        builtin: None,
     };
 
     // First lookup: miss.

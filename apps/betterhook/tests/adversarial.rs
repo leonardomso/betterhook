@@ -41,6 +41,7 @@ fn job(name: &str, reads: &[&str], writes: &[&str], priority: u32) -> Job {
         writes: writes.iter().map(|s| (*s).to_owned()).collect(),
         network: false,
         concurrent_safe: false,
+        builtin: None,
     }
 }
 
