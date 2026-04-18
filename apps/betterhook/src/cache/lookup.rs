@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Job;
 
-use super::hash::{ArgsHash, CacheKey, ContentHash, ToolHash, args_hash, hash_bytes, hash_file};
+use super::hash::{ArgsHash, CacheKey, ContentHash, ToolHash, args_hash_from_fields, hash_bytes, hash_file};
 use super::store::{CachedInput, CachedResult, Store, StoreError, StoreResult};
 use super::tool_hash::resolve_tool_hash;
 
@@ -49,21 +49,7 @@ pub fn tool_hash_proxy(run: &str) -> ToolHash {
 /// what the subprocess actually does must feed into this hash.
 #[must_use]
 pub fn args_hash_from_job(job: &Job) -> ArgsHash {
-    let mut components: Vec<String> = Vec::with_capacity(4 + job.env.len());
-    components.push(format!("run:{}", job.run));
-    if let Some(fix) = &job.fix {
-        components.push(format!("fix:{fix}"));
-    }
-    for g in &job.glob {
-        components.push(format!("glob:{g}"));
-    }
-    for e in &job.exclude {
-        components.push(format!("exclude:{e}"));
-    }
-    for (k, v) in &job.env {
-        components.push(format!("env:{k}={v}"));
-    }
-    args_hash(&components)
+    args_hash_from_fields(job)
 }
 
 /// Derive the full `CacheKey` for a `(job, files)` pair. Uses the

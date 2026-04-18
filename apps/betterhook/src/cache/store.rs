@@ -156,6 +156,7 @@ impl Store {
     }
 
     /// Fetch a cached result, if one exists.
+    #[must_use = "cache lookups are pure queries; ignoring the result is a bug"]
     pub fn get(&self, key: &CacheKey) -> StoreResult<Option<CachedResult>> {
         let path = self.entry_path(key);
         match std::fs::read(&path) {
@@ -202,6 +203,7 @@ impl Store {
     }
 
     /// Remove an entry if it exists.
+    #[must_use = "returns whether the entry existed"]
     pub fn remove(&self, key: &CacheKey) -> StoreResult<bool> {
         let path = self.entry_path(key);
         match std::fs::remove_file(&path) {
@@ -212,6 +214,7 @@ impl Store {
     }
 
     /// True when the store has no entries on disk.
+    #[must_use = "check the boolean to know whether the store is empty"]
     pub fn is_empty(&self) -> StoreResult<bool> {
         Ok(self.len()? == 0)
     }
@@ -257,6 +260,7 @@ impl Store {
     /// Walks the on-disk tree — O(entries). Fine for `cache stats`
     /// on reasonable cache sizes; a future phase can add a stats
     /// sidecar if this ever shows up in a profile.
+    #[must_use = "discarding the count means wasted I/O"]
     pub fn len(&self) -> StoreResult<usize> {
         let mut count = 0usize;
         self.for_each_entry(|_| {
@@ -275,6 +279,7 @@ impl Store {
     /// Aggregate the store into a [`Stats`] snapshot by walking every
     /// shard directory and tallying entry count, total bytes, and the
     /// oldest/newest `modified` timestamp.
+    #[must_use = "discarding stats means wasted I/O"]
     pub fn stats(&self) -> StoreResult<Stats> {
         let mut stats = Stats::default();
         self.for_each_entry(|entry| {
@@ -299,6 +304,7 @@ impl Store {
     }
 
     /// Remove every cache entry. Returns the number of files deleted.
+    #[must_use = "returns the number of entries removed"]
     pub fn clear(&self) -> StoreResult<usize> {
         let mut removed = 0usize;
         self.for_each_entry(|entry| {
@@ -315,6 +321,7 @@ impl Store {
     /// Walk the store and return any entry whose JSON no longer
     /// deserializes cleanly. Caller-initiated `cache clear` is the
     /// remediation; `verify` itself doesn't repair anything.
+    #[must_use = "inspect the list of corrupt entries"]
     pub fn verify(&self) -> StoreResult<Vec<PathBuf>> {
         let mut corrupt = Vec::new();
         self.for_each_entry(|entry| {

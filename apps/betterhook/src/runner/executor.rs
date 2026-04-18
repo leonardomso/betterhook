@@ -33,7 +33,7 @@ use crate::lock::{LockGuard, acquire_job_lock};
 type GitIndexLock = Arc<Mutex<()>>;
 
 /// Summary of a hook run, returned to the CLI for exit-code mapping.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionReport {
     pub hook_name: String,
     pub ok: bool,
@@ -458,7 +458,7 @@ async fn run_parallel(
         }
 
         // Release children of the finished node.
-        for child in graph.nodes[idx].children.clone() {
+        for &child in &graph.nodes[idx].children {
             if pending[child] > 0 {
                 pending[child] -= 1;
             }
@@ -487,7 +487,7 @@ fn release_children(
     started: &[bool],
     ready: &mut BinaryHeap<std::cmp::Reverse<(u32, usize)>>,
 ) {
-    for child in graph.nodes[idx].children.clone() {
+    for &child in &graph.nodes[idx].children {
         if pending[child] > 0 {
             pending[child] -= 1;
         }

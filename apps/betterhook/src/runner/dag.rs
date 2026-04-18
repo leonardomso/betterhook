@@ -53,7 +53,7 @@ pub enum DagError {
 pub type DagResult<T> = Result<T, DagError>;
 
 /// One node in the DAG — a job plus its resolved parent/child indices.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DagNode {
     pub index: usize,
     pub job: Job,
@@ -62,7 +62,7 @@ pub struct DagNode {
 }
 
 /// Static dependency graph built from a flat job list.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobGraph {
     pub nodes: Vec<DagNode>,
 }
@@ -100,6 +100,7 @@ impl JobGraph {
 }
 
 /// Build a DAG from a list of jobs.
+#[must_use = "the job graph drives execution order"]
 pub fn build_dag(jobs: &[Job]) -> DagResult<JobGraph> {
     let mut nodes: Vec<DagNode> = jobs
         .iter()

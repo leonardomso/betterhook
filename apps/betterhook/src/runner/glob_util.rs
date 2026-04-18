@@ -10,6 +10,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 /// Build a `GlobSet` from a pattern list. Returns `Ok(None)` when
 /// `patterns` is empty (signalling "match nothing"); the callers
 /// uniformly want `None` rather than an "always matches" set.
+#[must_use = "discarding the compiled glob set is always a bug"]
 pub fn build_globset(patterns: &[String]) -> Result<Option<GlobSet>, globset::Error> {
     if patterns.is_empty() {
         return Ok(None);
@@ -24,6 +25,7 @@ pub fn build_globset(patterns: &[String]) -> Result<Option<GlobSet>, globset::Er
 /// Build a `GlobSet` that always returns a set (never `None`). Used
 /// when the empty case should yield an empty matcher rather than a
 /// sentinel `None` — matches the semantics the watcher expects.
+#[must_use = "discarding the compiled glob set is always a bug"]
 pub fn build_globset_always(patterns: &[String]) -> Result<GlobSet, globset::Error> {
     let mut builder = GlobSetBuilder::new();
     for pat in patterns {

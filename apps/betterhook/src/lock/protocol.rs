@@ -68,6 +68,7 @@ pub struct LockStatus {
 }
 
 /// Encode a message with a 4-byte big-endian length prefix.
+#[must_use = "encoded frame must be sent over the wire"]
 pub fn encode_frame<T: Serialize>(msg: &T) -> Result<Vec<u8>, bincode::error::EncodeError> {
     let body = bincode::serde::encode_to_vec(msg, bincode::config::standard())?;
     let len = u32::try_from(body.len()).expect("frame larger than 4 GiB");
@@ -80,6 +81,7 @@ pub fn encode_frame<T: Serialize>(msg: &T) -> Result<Vec<u8>, bincode::error::En
 /// Decode a single bincode message from a byte slice (the length
 /// prefix is handled by the framed codec on the socket, so this just
 /// unwraps the body).
+#[must_use = "decoded message must be inspected"]
 pub fn decode_frame<T: for<'de> Deserialize<'de>>(
     bytes: &[u8],
 ) -> Result<T, bincode::error::DecodeError> {

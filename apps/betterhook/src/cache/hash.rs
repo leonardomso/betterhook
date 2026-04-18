@@ -55,6 +55,7 @@ pub fn hash_bytes(data: &[u8]) -> String {
 
 /// Stream-hash a file via `blake3::Hasher::update_mmap` when possible,
 /// falling back to a buffered read for files that can't be mmapped.
+#[must_use = "discarding a content hash means wasted I/O"]
 pub fn hash_file(path: &Path) -> io::Result<ContentHash> {
     let mut hasher = blake3::Hasher::new();
     // `update_mmap` returns an io::Error on failure; we don't have a
@@ -71,12 +72,47 @@ pub fn hash_file(path: &Path) -> io::Result<ContentHash> {
 /// separately because different tools may reorder behavior.
 #[must_use]
 pub fn args_hash(args: &[String]) -> ArgsHash {
-    let mut joined = Vec::new();
+    let cap = args.iter().map(|a| a.len() + 1).sum();
+    let mut joined = Vec::with_capacity(cap);
     for arg in args {
         joined.extend_from_slice(arg.as_bytes());
         joined.push(0);
     }
     ArgsHash(hash_bytes(&joined))
+}
+
+/// Hash job fields directly into a blake3 hasher without allocating
+/// intermediate `String`s. Each field is NUL-delimited so reordering
+/// or insertion is always distinguishable.
+#[must_use]
+pub fn args_hash_from_fields(job: &crate::config::Job) -> ArgsHash {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"run:");
+    hasher.update(job.run.as_bytes());
+    hasher.update(b"\0");
+    if let Some(fix) = &job.fix {
+        hasher.update(b"fix:");
+        hasher.update(fix.as_bytes());
+        hasher.update(b"\0");
+    }
+    for g in &job.glob {
+        hasher.update(b"glob:");
+        hasher.update(g.as_bytes());
+        hasher.update(b"\0");
+    }
+    for e in &job.exclude {
+        hasher.update(b"exclude:");
+        hasher.update(e.as_bytes());
+        hasher.update(b"\0");
+    }
+    for (k, v) in &job.env {
+        hasher.update(b"env:");
+        hasher.update(k.as_bytes());
+        hasher.update(b"=");
+        hasher.update(v.as_bytes());
+        hasher.update(b"\0");
+    }
+    ArgsHash(hasher.finalize().to_hex().to_string())
 }
 
 /// Combine the three axes into a single `CacheKey`.

@@ -101,7 +101,7 @@ fn color_for(job: &str) -> AnsiColors {
 }
 
 /// Selects which output sink the multiplexer writes to.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SinkKind {
     /// Colorized line-prefixed output for humans (default).
     #[default]
@@ -152,13 +152,12 @@ fn write_event(ev: &OutputEvent) {
         }
         OutputEvent::Line { job, stream, line } => {
             let c = color_for(job);
-            let prefix = format!("[{job}]");
             match stream {
                 Stream::Stdout => {
-                    println!("{} {}", prefix.color(c), line);
+                    println!("[{}] {}", job.color(c), line);
                 }
                 Stream::Stderr => {
-                    eprintln!("{} {}", prefix.color(c), line);
+                    eprintln!("[{}] {}", job.color(c), line);
                 }
             }
         }
@@ -184,19 +183,18 @@ fn write_event(ev: &OutputEvent) {
         OutputEvent::JobSkipped { job, reason } => {
             let c = color_for(job);
             eprintln!(
-                "{} {} {}",
+                "{} {} skipped ({})",
                 "∘".dimmed(),
                 job.color(c).bold(),
-                format!("skipped ({reason})").dimmed()
+                reason.dimmed()
             );
         }
         OutputEvent::JobCacheHit { job, files } => {
             let c = color_for(job);
             eprintln!(
-                "{} {} {}",
+                "{} {} cache hit ({files} files)",
                 "⚡".color(c),
                 job.color(c).bold(),
-                format!("cache hit ({files} files)").dimmed()
             );
         }
         OutputEvent::Diagnostic {

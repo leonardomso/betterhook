@@ -269,6 +269,7 @@ pub enum ToolPathScope {
 
 impl RawConfig {
     /// Validate and lower a raw config into the canonical typed representation.
+    #[must_use = "the lowered Config is needed for execution"]
     pub fn lower(self) -> ConfigResult<Config> {
         let meta = match self.meta {
             Some(m) => Meta {
