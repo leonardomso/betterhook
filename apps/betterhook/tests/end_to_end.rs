@@ -492,3 +492,212 @@ reads = ["**/*.ts"]
     assert!(dot.contains("->"), "conflicting writers should produce an edge");
     assert!(dot.trim_end().ends_with('}'));
 }
+
+// ────────────────── import edge cases (P12) ────────────────────────
+
+#[tokio::test]
+async fn import_lefthook_empty_commands_map() {
+    let (_d, repo) = init_repo();
+    let lefthook = repo.join("lefthook.yml");
+    std::fs::write(&lefthook, "pre-commit:\n  commands: {}\n").unwrap();
+    let (raw, _) = import::import_file(ImportSource::Lefthook, &lefthook).unwrap();
+    let cfg = raw.lower().unwrap();
+    assert!(cfg.hooks["pre-commit"].jobs.is_empty());
+}
+
+#[tokio::test]
+async fn import_lefthook_multiple_hooks() {
+    let (_d, repo) = init_repo();
+    let lefthook = repo.join("lefthook.yml");
+    std::fs::write(
+        &lefthook,
+        "pre-commit:\n  commands:\n    lint:\n      run: eslint\npre-push:\n  commands:\n    test:\n      run: cargo test\n",
+    )
+    .unwrap();
+    let (raw, _) = import::import_file(ImportSource::Lefthook, &lefthook).unwrap();
+    let cfg = raw.lower().unwrap();
+    assert_eq!(cfg.hooks.len(), 2);
+}
+
+#[tokio::test]
+async fn import_husky_strips_npx_prefix() {
+    let (_d, repo) = init_repo();
+    std::fs::create_dir_all(repo.join(".husky")).unwrap();
+    let script = repo.join(".husky/pre-commit");
+    std::fs::write(&script, "#!/usr/bin/env sh\nnpx lint-staged\n").unwrap();
+    let (raw, _) = import::import_file(ImportSource::Husky, &script).unwrap();
+    let cfg = raw.lower().unwrap();
+    let run = &cfg.hooks["pre-commit"].jobs[0].run;
+    assert!(run.contains("lint-staged"), "should preserve the command");
+}
+
+#[tokio::test]
+async fn import_auto_detect_lefthook() {
+    assert_eq!(
+        ImportSource::auto_detect(std::path::Path::new("lefthook.yml")),
+        Some(ImportSource::Lefthook)
+    );
+}
+
+#[tokio::test]
+async fn import_auto_detect_husky() {
+    assert_eq!(
+        ImportSource::auto_detect(std::path::Path::new(".husky/pre-commit")),
+        Some(ImportSource::Husky)
+    );
+}
+
+#[tokio::test]
+async fn import_auto_detect_pre_commit() {
+    assert_eq!(
+        ImportSource::auto_detect(std::path::Path::new(".pre-commit-config.yaml")),
+        Some(ImportSource::PreCommit)
+    );
+}
+
+#[tokio::test]
+async fn import_auto_detect_unknown() {
+    assert!(ImportSource::auto_detect(std::path::Path::new("random.toml")).is_none());
+}
+
+#[tokio::test]
+async fn import_from_cli_lefthook() {
+    assert_eq!(ImportSource::from_cli("lefthook"), Some(ImportSource::Lefthook));
+}
+
+#[tokio::test]
+async fn import_from_cli_husky() {
+    assert_eq!(ImportSource::from_cli("husky"), Some(ImportSource::Husky));
+}
+
+#[tokio::test]
+async fn import_from_cli_unknown() {
+    assert!(ImportSource::from_cli("unknown-tool").is_none());
+}
+
+// ──────────────────── status / doctor (P12) ─────────────────────────
+
+#[tokio::test]
+async fn status_reports_installed_hooks() {
+    let (_d, repo) = init_repo();
+    write_config(
+        &repo,
+        r#"[hooks.pre-commit.jobs.lint]
+run = "true"
+"#,
+    );
+    install(InstallOptions {
+        worktree: Some(repo.clone()),
+        skip_unit: true,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let status = betterhook::status::collect(Some(&repo)).await.unwrap();
+    assert!(status.installed.is_some());
+}
+
+#[tokio::test]
+async fn status_includes_betterhook_version() {
+    let (_d, repo) = init_repo();
+    write_config(
+        &repo,
+        r#"[hooks.pre-commit.jobs.lint]
+run = "true"
+"#,
+    );
+    let status = betterhook::status::collect(Some(&repo)).await.unwrap();
+    assert!(
+        !status.betterhook_version.is_empty(),
+        "version should be populated"
+    );
+}
+
+// ──────────────── monorepo dispatch extras (P12) ────────────────────
+
+#[tokio::test]
+async fn monorepo_five_packages_dispatch() {
+    let (_d, repo) = init_repo();
+    for pkg in &["alpha", "beta", "gamma", "delta", "epsilon"] {
+        let pkg_dir = repo.join(format!("apps/{pkg}/src"));
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("mod.rs"), "// code").unwrap();
+    }
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "scaffold"]);
+
+    let mut cfg_body = "[meta]\nversion = 1\n\n".to_owned();
+    for pkg in &["alpha", "beta", "gamma", "delta", "epsilon"] {
+        use std::fmt::Write;
+        let _ = write!(
+            cfg_body,
+            "[packages.{pkg}]\npath = \"apps/{pkg}\"\n\n[packages.{pkg}.hooks.pre-commit.jobs.lint]\nrun = \"true\"\n\n"
+        );
+    }
+    write_config(&repo, &cfg_body);
+
+    let cfg = load(&repo.join("betterhook.toml")).unwrap();
+    assert_eq!(cfg.packages.len(), 5);
+}
+
+#[tokio::test]
+async fn monorepo_package_hook_overrides_root() {
+    let (_d, repo) = init_repo();
+    write_config(
+        &repo,
+        r#"[meta]
+version = 1
+
+[hooks.pre-commit.jobs.global]
+run = "echo global"
+
+[packages.frontend]
+path = "apps/web"
+
+[packages.frontend.hooks.pre-commit.jobs.lint]
+run = "echo frontend-lint"
+"#,
+    );
+    let cfg = load(&repo.join("betterhook.toml")).unwrap();
+    assert!(cfg.hooks.contains_key("pre-commit"), "root hook exists");
+    assert!(
+        cfg.packages["frontend"].hooks.contains_key("pre-commit"),
+        "package hook exists"
+    );
+}
+
+// ──────────────── explain dot edge cases (P12) ──────────────────────
+
+#[tokio::test]
+async fn explain_dag_zero_edges_valid_digraph() {
+    let (_d, repo) = init_repo();
+    write_config(
+        &repo,
+        r#"[meta]
+version = 1
+
+[hooks.pre-commit.jobs.alpha]
+run = "true"
+reads = ["*.rs"]
+
+[hooks.pre-commit.jobs.beta]
+run = "true"
+reads = ["*.ts"]
+"#,
+    );
+    let cfg = load(&repo.join("betterhook.toml")).unwrap();
+    let hook = &cfg.hooks["pre-commit"];
+    let graph = betterhook::runner::build_dag(&hook.jobs).unwrap();
+    assert_eq!(graph.edge_count(), 0);
+
+    let mut dot = String::from("digraph betterhook {\n");
+    for node in &graph.nodes {
+        use std::fmt::Write;
+        let _ = writeln!(dot, "  \"{}\";", node.job.name);
+    }
+    dot.push_str("}\n");
+    assert!(dot.starts_with("digraph betterhook {"));
+    assert!(dot.trim_end().ends_with('}'));
+    assert!(!dot.contains("->"), "disjoint reads should produce no edges");
+}

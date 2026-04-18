@@ -515,3 +515,302 @@ mod speculative {
         );
     }
 }
+
+// ────────────────────────── config boundaries ──────────────────────
+mod config_boundaries {
+    use super::*;
+
+    #[test]
+    fn empty_toml_is_valid() {
+        let raw = parse_bytes("", Format::Toml, "empty.toml").unwrap();
+        assert!(raw.hooks.is_empty());
+    }
+
+    #[test]
+    fn empty_yaml_is_valid() {
+        let raw = parse_bytes("{}", Format::Yaml, "empty.yaml").unwrap();
+        assert!(raw.hooks.is_empty());
+    }
+
+    #[test]
+    fn empty_json_is_valid() {
+        let raw = parse_bytes("{}", Format::Json, "empty.json").unwrap();
+        assert!(raw.hooks.is_empty());
+    }
+
+    #[test]
+    fn config_with_bom_prefix() {
+        let src = "\u{FEFF}[hooks.pre-commit.jobs.lint]\nrun = \"true\"\n";
+        let _ = parse_bytes(src, Format::Toml, "bom.toml");
+    }
+
+    #[test]
+    fn config_with_trailing_whitespace() {
+        let src = "[hooks.pre-commit.jobs.lint]\nrun = \"true\"   \n";
+        let raw = parse_bytes(src, Format::Toml, "ws.toml").unwrap();
+        assert!(raw.hooks.contains_key("pre-commit"));
+    }
+
+    #[test]
+    fn unicode_job_name() {
+        let src = "[hooks.pre-commit.jobs.\"日本語\"]\nrun = \"true\"\n";
+        let raw = parse_bytes(src, Format::Toml, "unicode.toml").unwrap();
+        assert!(raw.hooks["pre-commit"].jobs.contains_key("日本語"));
+    }
+
+    #[test]
+    fn very_long_job_name_does_not_panic() {
+        let name = "x".repeat(1000);
+        let src = format!("[hooks.pre-commit.jobs.\"{name}\"]\nrun = \"true\"\n");
+        let raw = parse_bytes(&src, Format::Toml, "long.toml").unwrap();
+        assert_eq!(raw.hooks["pre-commit"].jobs.len(), 1);
+    }
+
+    #[test]
+    fn very_long_run_command_does_not_panic() {
+        let cmd = "echo ".to_owned() + &"x".repeat(10_000);
+        let src = format!("[hooks.pre-commit.jobs.big]\nrun = \"{cmd}\"\n");
+        let raw = parse_bytes(&src, Format::Toml, "long-cmd.toml").unwrap();
+        assert!(raw.hooks["pre-commit"].jobs["big"]
+            .run
+            .as_ref()
+            .unwrap()
+            .len()
+            > 10_000);
+    }
+
+    #[test]
+    fn fifty_jobs_in_one_hook() {
+        let mut src = String::new();
+        for i in 0..50 {
+            use std::fmt::Write;
+            let _ = write!(src, "[hooks.pre-commit.jobs.job_{i}]\nrun = \"true\"\n");
+        }
+        let raw = parse_bytes(&src, Format::Toml, "fifty.toml").unwrap();
+        assert_eq!(raw.hooks["pre-commit"].jobs.len(), 50);
+    }
+
+    #[test]
+    fn lower_with_no_hooks_is_valid() {
+        let raw = parse_bytes("[meta]\nversion = 1\n", Format::Toml, "no-hooks.toml").unwrap();
+        let cfg = raw.lower().unwrap();
+        assert!(cfg.hooks.is_empty());
+    }
+
+    #[test]
+    fn lower_fifty_jobs_builds_dag() {
+        let mut src = String::new();
+        for i in 0..50 {
+            use std::fmt::Write;
+            let _ = write!(src, "[hooks.pre-commit.jobs.job_{i}]\nrun = \"true\"\n");
+        }
+        let raw = parse_bytes(&src, Format::Toml, "fifty.toml").unwrap();
+        let cfg = raw.lower().unwrap();
+        let dag = build_dag(&cfg.hooks["pre-commit"].jobs).unwrap();
+        assert_eq!(dag.nodes.len(), 50);
+    }
+}
+
+// ───────────────── cache adversarial (P13) ──────────────────────────
+mod cache_adversarial {
+    use super::*;
+
+    #[test]
+    fn cache_key_with_empty_file_set_is_stable() {
+        let a = args_hash(&[]);
+        let b = args_hash(&[]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn hash_bytes_with_1mb_input() {
+        let big = vec![0xABu8; 1_000_000];
+        let h = hash_bytes(&big);
+        assert_eq!(h.len(), 64, "hash should be 64 hex chars");
+    }
+
+    #[test]
+    fn hash_bytes_empty_input() {
+        let h = hash_bytes(b"");
+        assert_eq!(h.len(), 64);
+    }
+
+    #[test]
+    fn store_put_get_with_many_inputs() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = Store::new(dir.path());
+        let key = CacheKey {
+            content: ContentHash("a".repeat(64)),
+            tool: ToolHash("bc".to_owned() + &"0".repeat(62)),
+            args: ArgsHash("d".repeat(64)),
+        };
+        let inputs: Vec<CachedInput> = (0..100)
+            .map(|i| CachedInput {
+                path: PathBuf::from(format!("file_{i}.rs")),
+                modified_at: None,
+            })
+            .collect();
+        let result = CachedResult {
+            exit: 0,
+            events: Vec::new(),
+            created_at: std::time::SystemTime::now(),
+            inputs,
+        };
+        store.put(&key, &result).unwrap();
+        let back = store.get(&key).unwrap().expect("should round-trip");
+        assert_eq!(back.inputs.len(), 100);
+    }
+
+    #[test]
+    fn store_verify_detects_no_corruption_on_valid_entry() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = Store::new(dir.path());
+        let key = CacheKey {
+            content: ContentHash("e".repeat(64)),
+            tool: ToolHash("fg".to_owned() + &"0".repeat(62)),
+            args: ArgsHash("h".repeat(64)),
+        };
+        store.put(&key, &CachedResult {
+            exit: 0,
+            events: Vec::new(),
+            created_at: std::time::SystemTime::now(),
+            inputs: Vec::new(),
+        }).unwrap();
+        let corrupt = store.verify().unwrap();
+        assert!(corrupt.is_empty());
+    }
+
+    #[test]
+    fn store_stats_after_put_and_clear() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = Store::new(dir.path());
+        let key = CacheKey {
+            content: ContentHash("i".repeat(64)),
+            tool: ToolHash("jk".to_owned() + &"0".repeat(62)),
+            args: ArgsHash("l".repeat(64)),
+        };
+        store.put(&key, &CachedResult {
+            exit: 0,
+            events: Vec::new(),
+            created_at: std::time::SystemTime::now(),
+            inputs: Vec::new(),
+        }).unwrap();
+        let stats = store.stats().unwrap();
+        assert_eq!(stats.entries, 1);
+        assert!(stats.total_bytes > 0);
+        store.clear().unwrap();
+        let stats2 = store.stats().unwrap();
+        assert_eq!(stats2.entries, 0);
+    }
+}
+
+// ───────────────── importer adversarial (P13) ───────────────────────
+mod importer_adversarial {
+    use betterhook::config::import::{ImportSource, husky, lefthook, hk, pre_commit};
+
+    #[test]
+    fn lefthook_empty_yaml_is_safe() {
+        let (raw, _) = lefthook::from_yaml("{}").unwrap();
+        assert!(raw.hooks.is_empty());
+    }
+
+    #[test]
+    fn lefthook_minimal_command() {
+        let src = "pre-commit:\n  commands:\n    a:\n      run: \"true\"\n";
+        let (raw, _) = lefthook::from_yaml(src).unwrap();
+        assert!(raw.hooks.contains_key("pre-commit"));
+    }
+
+    #[test]
+    fn husky_multiline_script() {
+        let script = "#!/usr/bin/env sh\nset -e\nnpx lint-staged\ncargo test\n";
+        let (raw, _) = husky::from_script(script, &std::path::PathBuf::from(".husky/pre-commit")).unwrap();
+        assert!(!raw.hooks["pre-commit"].jobs.is_empty());
+    }
+
+    #[test]
+    fn hk_empty_toml_is_safe() {
+        let _ = hk::from_text("");
+    }
+
+    #[test]
+    fn pre_commit_empty_repos_is_safe() {
+        let src = "repos: []\n";
+        let (raw, _) = pre_commit::from_yaml(src).unwrap();
+        assert!(raw.hooks["pre-commit"].jobs.is_empty());
+    }
+
+    #[test]
+    fn import_source_from_cli_all_variants() {
+        assert_eq!(ImportSource::from_cli("lefthook"), Some(ImportSource::Lefthook));
+        assert_eq!(ImportSource::from_cli("husky"), Some(ImportSource::Husky));
+        assert_eq!(ImportSource::from_cli("hk"), Some(ImportSource::Hk));
+        assert_eq!(ImportSource::from_cli("pre-commit"), Some(ImportSource::PreCommit));
+        assert!(ImportSource::from_cli("nope").is_none());
+    }
+}
+
+// ──────────────── DAG boundary tests (P13) ──────────────────────────
+mod dag_boundary {
+    use super::*;
+
+    #[test]
+    fn hundred_jobs_with_shared_writers() {
+        let jobs: Vec<Job> = (0..100)
+            .map(|i| {
+                let write_pat = if i % 2 == 0 {
+                    "src/**/*.ts".to_owned()
+                } else {
+                    format!("unique-{i}/**/*.rs")
+                };
+                job(
+                    &format!("j-{i}"),
+                    &[],
+                    &[&write_pat],
+                    i,
+                )
+            })
+            .collect();
+        let dag = build_dag(&jobs).unwrap();
+        assert_eq!(dag.nodes.len(), 100);
+        assert!(dag.edge_count() > 0);
+    }
+
+    #[test]
+    fn job_with_no_reads_writes_network_is_root() {
+        let jobs = vec![
+            job("isolated", &[], &[], 0),
+            job("writer", &[], &["**/*.ts"], 1),
+        ];
+        let dag = build_dag(&jobs).unwrap();
+        assert!(
+            dag.nodes[0].parents.is_empty(),
+            "job with no resource declarations should be a root"
+        );
+    }
+
+    #[test]
+    fn explain_dot_with_50_nodes_valid() {
+        let jobs: Vec<Job> = (0..50)
+            .map(|i| job(&format!("n-{i}"), &[], &[], i))
+            .collect();
+        let dag = build_dag(&jobs).unwrap();
+        let mut dot = String::from("digraph betterhook {\n");
+        for node in &dag.nodes {
+            use std::fmt::Write;
+            let _ = writeln!(dot, "  \"{}\";", node.job.name);
+        }
+        for (a, b) in dag.edges() {
+            use std::fmt::Write;
+            let _ = writeln!(
+                dot,
+                "  \"{}\" -> \"{}\";",
+                dag.nodes[a].job.name, dag.nodes[b].job.name
+            );
+        }
+        dot.push_str("}\n");
+        assert!(dot.starts_with("digraph betterhook {"));
+        assert!(dot.contains("\"n-0\""));
+        assert!(dot.contains("\"n-49\""));
+    }
+}
