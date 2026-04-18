@@ -56,7 +56,10 @@ async fn mutex_semaphore_is_exclusive() {
     let _permit = sem.clone().acquire_owned().await.unwrap();
     assert_eq!(sem.available_permits(), 0);
     let try_result = sem.clone().try_acquire_owned();
-    assert!(try_result.is_err(), "should not be able to acquire when full");
+    assert!(
+        try_result.is_err(),
+        "should not be able to acquire when full"
+    );
 }
 
 #[tokio::test]
@@ -147,6 +150,9 @@ async fn concurrent_semaphore_creation_returns_same_arc() {
         sems.push(h.await.unwrap());
     }
     for s in &sems[1..] {
-        assert!(Arc::ptr_eq(&sems[0], s), "all tasks should get the same semaphore");
+        assert!(
+            Arc::ptr_eq(&sems[0], s),
+            "all tasks should get the same semaphore"
+        );
     }
 }

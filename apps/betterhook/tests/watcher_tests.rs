@@ -78,10 +78,7 @@ async fn modify_event_is_delivered() {
     // macOS FSEvents may coalesce a modify into Create(File); the key
     // assertion is that we get *some* event for the changed file.
     assert!(
-        matches!(
-            event.kind,
-            EventKind::Create(_) | EventKind::Modify(_)
-        ),
+        matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)),
         "expected Create or Modify, got {:?}",
         event.kind
     );
@@ -127,10 +124,7 @@ async fn exclude_filter_blocks_events() {
     std::fs::write(excluded_dir.join("output.o"), "binary").unwrap();
 
     let result = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
-    assert!(
-        result.is_err(),
-        "excluded paths should not produce events"
-    );
+    assert!(result.is_err(), "excluded paths should not produce events");
 }
 
 #[tokio::test]
@@ -168,5 +162,8 @@ async fn drop_closes_event_channel() {
         while rx.recv().await.is_some() {}
     })
     .await;
-    assert!(result.is_ok(), "channel should close when handle is dropped");
+    assert!(
+        result.is_ok(),
+        "channel should close when handle is dropped"
+    );
 }

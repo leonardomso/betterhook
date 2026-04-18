@@ -47,10 +47,7 @@ async fn collect_events_in(
     (exit, events)
 }
 
-async fn collect_events_result(
-    cmd: &str,
-    cwd: &Path,
-) -> Result<i32, betterhook::runner::RunError> {
+async fn collect_events_result(cmd: &str, cwd: &Path) -> Result<i32, betterhook::runner::RunError> {
     let (tx, _rx) = mpsc::channel(256);
     run_command("test-job", cmd, cwd, &BTreeMap::new(), &[], None, None, &tx).await
 }

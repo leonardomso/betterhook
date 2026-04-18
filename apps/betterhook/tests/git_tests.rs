@@ -180,7 +180,10 @@ async fn stash_guard_message_matches_expected_format() {
     let guard = StashGuard::push(&repo).await.unwrap();
     let msg = guard.message();
     let re = regex::Regex::new(r"^betterhook-stash-\d+-\d+$").unwrap();
-    assert!(re.is_match(msg), "message '{msg}' should match betterhook-stash-<pid>-<nanos>");
+    assert!(
+        re.is_match(msg),
+        "message '{msg}' should match betterhook-stash-<pid>-<nanos>"
+    );
     guard.pop().await.unwrap();
 }
 
@@ -273,7 +276,9 @@ async fn stash_guard_has_no_drop_cleanup() {
 #[tokio::test]
 async fn run_git_nonzero_exit_returns_error() {
     let (_d, repo) = init_repo();
-    let err = run_git(&repo, ["rev-parse", "--verify", "refs/heads/nonexistent"]).await.unwrap_err();
+    let err = run_git(&repo, ["rev-parse", "--verify", "refs/heads/nonexistent"])
+        .await
+        .unwrap_err();
     let msg = format!("{err}");
     assert!(msg.contains("exited with status"), "got: {msg}");
 }
