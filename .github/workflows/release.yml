@@ -59,10 +59,6 @@ jobs:
             cargo build --release --target ${{ matrix.target }} -p betterhook-cli
           fi
 
-      - name: Strip binary
-        if: "!matrix.cross"
-        run: strip target/${{ matrix.target }}/release/${{ matrix.binary }}
-
       - name: Rename binary
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.asset }}
@@ -93,6 +89,12 @@ jobs:
           echo "Release notes for v${TAG}:"
           cat release_notes.md
 
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum */betterhook-* > checksums-sha256.txt
+          cat checksums-sha256.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -102,5 +104,6 @@ jobs:
             artifacts/betterhook-aarch64-unknown-linux-gnu/betterhook-aarch64-unknown-linux-gnu
             artifacts/betterhook-x86_64-apple-darwin/betterhook-x86_64-apple-darwin
             artifacts/betterhook-aarch64-apple-darwin/betterhook-aarch64-apple-darwin
+            artifacts/checksums-sha256.txt
           draft: false
-          prerelease: true
+          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}

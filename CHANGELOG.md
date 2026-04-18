@@ -4,6 +4,8 @@ All notable changes to betterhook. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this
 project adheres to [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
 ## [0.0.2] - 2026-04-12
 
 Code-quality release. No new features and no schema changes — every
@@ -229,7 +231,7 @@ dogfooding.
 #### Foundation (phases 1–5)
 - Turborepo monorepo with `apps/betterhook` (library + `betterhookd`
   binary) and `apps/cli` (the `betterhook` CLI).
-- Cargo workspace on resolver v3, edition 2024, rust 1.85 MSRV.
+- Cargo workspace on resolver v3, edition 2024, rust 1.86 MSRV.
 - Multi-format config parser supporting TOML, YAML, and JSON, all
   lowering to one canonical AST via `serde`.
 - `extends` inheritance with depth-first resolution, cross-format
