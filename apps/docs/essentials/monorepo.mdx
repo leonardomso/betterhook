@@ -4,7 +4,7 @@ description: "Per-package hook blocks with path filters and inheritance."
 icon: "boxes"
 ---
 
-Betterhook v1 introduces `[packages.<name>]` blocks for monorepos. The
+betterhook supports `[packages.<name>]` blocks for monorepos. The
 runner groups staged files by longest-path-prefix match against each
 package's `path`, runs each matched package's hook block in parallel,
 and serializes git-index writes across packages with a shared mutex.

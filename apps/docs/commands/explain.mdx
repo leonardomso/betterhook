@@ -71,7 +71,7 @@ $ betterhook explain --hook pre-commit --job lint
       "stage_fixed": true,
       "interactive": false,
       "priority": 1,
-      "isolate": "Some(Tool { name: \"eslint\" })"
+      "isolate": { "type": "tool", "name": "eslint" }
     }
   ]
 }

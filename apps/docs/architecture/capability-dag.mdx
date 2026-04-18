@@ -5,7 +5,7 @@ icon: "git-merge"
 ---
 
 Most hooks managers parallelize jobs by hand-tuned `priority` lists.
-Betterhook v1 ships a real DAG instead. Every job declares what it
+betterhook ships a real DAG instead. Every job declares what it
 **reads**, what it **writes**, whether it touches the **network**, and
 whether it's **concurrent_safe**. The runner builds a graph from those
 declarations and runs every root in parallel — only the pairs that

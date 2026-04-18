@@ -1,11 +1,11 @@
 ---
 title: "Config formats"
-description: "Write your config in TOML, YAML, or JSON — pick whichever you prefer."
+description: "Write your config in TOML, YAML, KDL, or JSON — pick whichever you prefer."
 icon: "code"
 ---
 
-betterhook accepts **all three** of `betterhook.toml`, `betterhook.yml` /
-`betterhook.yaml`, and `betterhook.json`. The parser auto-detects by extension.
+betterhook accepts `betterhook.toml`, `betterhook.yml` / `betterhook.yaml`,
+`betterhook.kdl`, and `betterhook.json`. The parser auto-detects by extension.
 
 Internally, every format deserializes into **one canonical `RawConfig` struct**
 via serde — so there's no behavioral difference downstream. You can even mix
@@ -21,6 +21,9 @@ When betterhook looks for a config in a worktree root, it tries:
   </Step>
   <Step title="betterhook.yml or betterhook.yaml">
     Most familiar to lefthook / pre-commit users.
+  </Step>
+  <Step title="betterhook.kdl">
+    Clean, node-based syntax. Good fit if you like concise config files.
   </Step>
   <Step title="betterhook.json">
     Best if your tooling generates the config programmatically.
@@ -103,7 +106,7 @@ All three produce the same in-memory `Config` and run identically.
 
 ## Choosing a format
 
-<CardGroup cols={3}>
+<CardGroup cols={2}>
   <Card title="TOML" icon="book">
     **Best default.** Diffable, line-oriented, no indentation surprises.
     Matches the Rust ecosystem.
@@ -111,6 +114,9 @@ All three produce the same in-memory `Config` and run identically.
   <Card title="YAML" icon="list">
     **Familiar to JS/Python teams.** Matches existing lefthook /
     pre-commit muscle memory.
+  </Card>
+  <Card title="KDL" icon="code">
+    **Clean and concise.** Node-based syntax with less nesting than TOML.
   </Card>
   <Card title="JSON" icon="braces">
     **Best for generated configs.** Trivial to produce from a build

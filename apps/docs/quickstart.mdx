@@ -38,7 +38,7 @@ icon: "rocket"
 
     <Note>
       If you already use husky or pre-commit and they've claimed `core.hooksPath`,
-      pass `--takeover` to replace their setup, or `--chain` to run them after betterhook.
+      pass `--takeover` to replace their setup.
     </Note>
   </Step>
 
@@ -51,7 +51,7 @@ icon: "rocket"
 
     ```json
     {
-      "betterhook_version": "0.0.1",
+      "betterhook_version": "0.0.2",
       "worktree": { "path": "...", "git_dir": "...", "common_dir": "..." },
       "installed": {
         "hooks": [{ "name": "pre-commit", "present": true, "matches": true }]
@@ -77,7 +77,7 @@ icon: "rocket"
 
 <CardGroup cols={3}>
   <Card title="From lefthook" icon="arrow-right" href="/migration/from-lefthook">
-    `betterhook migrate --from lefthook.yml` converts your config and writes migration notes.
+    `betterhook import --from lefthook.yml` converts your config and writes migration notes.
   </Card>
   <Card title="From husky" icon="arrow-right" href="/migration/from-husky">
     Drop husky, install betterhook with `--takeover`, move your shell into `betterhook.toml`.

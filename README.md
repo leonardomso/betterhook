@@ -120,7 +120,7 @@ betterhook install --takeover    # refuses unless you pass it
 
 ## Configuration
 
-`betterhook.toml` (or `betterhook.yml` / `betterhook.json` — all three parse into the same internal AST):
+`betterhook.toml` (or `betterhook.yml` / `betterhook.kdl` / `betterhook.json` — all four parse into the same internal AST):
 
 ```toml
 [meta]

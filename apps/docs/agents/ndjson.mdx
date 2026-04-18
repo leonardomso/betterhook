@@ -76,19 +76,6 @@ fields may be added, never renamed or removed.
     - `"BETTERHOOK_NO_LOCKS set — running unlocked"` — informational, emitted when --no-locks degrades an isolated job
   </Accordion>
 
-  <Accordion title="lock_wait" icon="clock">
-    Planned for v0.2: emitted when a job is waiting on a coordinator permit.
-
-    ```json
-    {
-      "kind": "lock_wait",
-      "scope": "Tool",
-      "name": "eslint",
-      "waited_ms": 42
-    }
-    ```
-  </Accordion>
-
   <Accordion title="summary" icon="receipt">
     The final event. Always emitted last, even on failure.
 
