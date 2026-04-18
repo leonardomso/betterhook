@@ -9,19 +9,18 @@ betterhook is a Rust cargo workspace split into two apps and an `xtask`:
 ```text
 betterhook/
 ├── apps/
-│   ├── betterhook/    # library crate + betterhookd binary
-│   └── cli/           # the `betterhook` CLI (thin clap frontend)
-├── xtask/             # bench + stress + lefthook-compat harness
-├── docs/              # protocol spec (published alongside docs site)
-├── man/               # betterhook.1 man page
-└── apps/docs/         # this site (Mintlify)
+│   ├── betterhook/    # library crate (config, runner, cache, daemon, builtins)
+│   ├── cli/           # the `betterhook` CLI (thin clap frontend)
+│   └── docs/          # this site (Mintlify)
+├── xtask/             # bench + stress + fuzz harness
+└── packaging/         # Homebrew formula + npm wrapper scaffolds
 ```
 
 ## Library modules
 
 <CardGroup cols={2}>
   <Card title="config/" icon="sliders" href="/essentials/configuration">
-    Multi-format parser (TOML + YAML + JSON), typed AST, extends inheritance, lefthook migrator.
+    Multi-format parser (TOML + YAML + KDL + JSON), typed AST, extends inheritance, importers.
   </Card>
   <Card title="git/" icon="git-branch" href="/architecture/worktree-model">
     Worktree introspection, `-z` NUL-delimited fileset computation, stash safety.
@@ -33,7 +32,7 @@ betterhook/
     Coordinator client, bincode wire protocol, fs4 flock fallback.
   </Card>
   <Card title="daemon/" icon="server" href="/architecture/daemon">
-    `betterhookd` — Unix socket listener, lock registry, idle-exit lifecycle.
+    Coordinator daemon — Unix socket listener, lock registry, idle-exit lifecycle.
   </Card>
   <Card title="install/" icon="download" href="/commands/install">
     Wrapper script rendering, SHA-verified install/uninstall, `installed.json` manifest.

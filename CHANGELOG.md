@@ -203,12 +203,9 @@ the `betterhookd` entry point is gone in favor of a hidden
   release.
 - `xtask bench-monorepo` generates a synthetic 10k-file monorepo
   and benchmarks betterhook against `hk` and `lefthook` on
-  identical configs, publishing a Markdown table to
-  `docs/bench-results.md`.
+  identical configs.
 - `xtask stress` runs the 8-worktree concurrent `cargo fmt` race
   the CEO plan calls out as the headline demo.
-- Launch docs (`docs/launch/hn-post.md`,
-  `docs/launch/demo-script.md`) plus updated Mintlify pages.
 
 ### Changed
 - `betterhook migrate` is now a hidden alias for
@@ -229,8 +226,8 @@ dogfooding.
 ### Added
 
 #### Foundation (phases 1–5)
-- Turborepo monorepo with `apps/betterhook` (library + `betterhookd`
-  binary) and `apps/cli` (the `betterhook` CLI).
+- Cargo workspace with `apps/betterhook` (library crate) and
+  `apps/cli` (the `betterhook` CLI).
 - Cargo workspace on resolver v3, edition 2024, rust 1.86 MSRV.
 - Multi-format config parser supporting TOML, YAML, and JSON, all
   lowering to one canonical AST via `serde`.
@@ -332,10 +329,8 @@ dogfooding.
 #### Documentation (phase 20)
 - `README.md` — full project intro, pitch, install, config, agent
   surfaces, exit codes, env vars, development.
-- `docs/protocol.md` — daemon IPC wire format and lifecycle for
-  third-party agent harnesses.
-- `man/betterhook.1` — subcommand reference, environment, exit
-  codes.
+- Daemon IPC wire format and lifecycle documented on the
+  [Mintlify docs site](https://betterhook.dev/reference/protocol).
 
 ### Known gaps (follow-ups)
 

@@ -7,8 +7,7 @@ merged.
 ## Prerequisites
 
 - **Rust 1.86+** (edition 2024). Install via [rustup](https://rustup.rs).
-- **bun 10+** for the Mintlify docs and the Turbo monorepo scripts.
-- **Node 20+** for the docs dev server.
+- **bun 1.x** for the Mintlify docs site.
 - **git** (any recent version).
 
 ## Repository layout
@@ -24,7 +23,7 @@ xtask/             Dev tooling: benchmarks, stress harness, fuzz runner
 
 ```bash
 cargo build --workspace          # compile everything
-cargo test --workspace           # run the full test suite (~220 tests)
+cargo test --workspace           # run the full test suite (~500 tests)
 cargo clippy --workspace --all-targets -- -D warnings   # lint
 cargo fmt --all -- --check       # formatting check
 ```
@@ -32,8 +31,8 @@ cargo fmt --all -- --check       # formatting check
 The docs site:
 
 ```bash
-bun install
-bun run docs:dev                # local Mintlify preview
+cd apps/docs && bun install
+bun run dev                     # local Mintlify preview
 ```
 
 ## Fuzzing

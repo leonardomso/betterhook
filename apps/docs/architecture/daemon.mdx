@@ -1,10 +1,10 @@
 ---
-title: "betterhookd daemon"
+title: "Coordinator daemon"
 description: "The opt-in coordinator daemon that serializes tool conflicts across worktrees."
 icon: "server"
 ---
 
-`betterhookd` is an **opt-in** process that serializes access to
+The coordinator daemon (`betterhook serve`) is an **opt-in** process that serializes access to
 cross-worktree shared tools (ESLint cache, cargo target dir, prettier on
 lockfiles). It **never runs** unless a hook declares `isolate` on at
 least one job.
@@ -49,7 +49,7 @@ enum Response {
     falls back to `<common-dir>/betterhook/sock`.
   </Step>
   <Step title="If no daemon is running">
-    `fork + exec betterhookd --socket <path>` and retry with 500 ms backoff
+    `fork + exec betterhook serve --socket <path>` and retry with 500 ms backoff
     up to 3 s. If the daemon fails to come up, degrade to flock.
   </Step>
   <Step title="Daemon serves requests">
@@ -111,7 +111,7 @@ default socket path can exceed that. betterhook's fallback is to use
 Normally the runner spawns the daemon automatically. For debugging:
 
 ```sh
-betterhookd --socket /tmp/test.sock
+betterhook serve --socket /tmp/test.sock
 # in another shell
 BETTERHOOK_DAEMON_SOCK=/tmp/test.sock betterhook run pre-commit
 ```

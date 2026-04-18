@@ -11,7 +11,7 @@ It's a single static Rust binary:
 - **~6 MB stripped**, **~50 ms cold start**
 - **Line-streaming subprocess I/O** via Tokio — output is live, memory is constant
 - **Worktree-native dispatch**: one wrapper in the shared `.git/hooks/` dir resolves the current worktree at commit time and loads *its* config
-- **Opt-in coordinator daemon** (`betterhookd`) that serializes tool conflicts across worktrees
+- **Opt-in coordinator daemon** (`betterhook serve`) that serializes tool conflicts across worktrees
 - **Agent-first**: NDJSON output, machine-readable status, stable exit codes, a `fix` subcommand for self-correction
 
 ```sh

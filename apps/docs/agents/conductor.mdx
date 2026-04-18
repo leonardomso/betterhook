@@ -21,7 +21,7 @@ designed to plug into this workflow directly.
     Every agent's commit resolves its own `betterhook.*`, not a shared one.
   </Card>
   <Card title="Cross-worktree coordinator" icon="lock" href="/essentials/isolation">
-    Sibling agents serialize through `betterhookd` on shared tools.
+    Sibling agents serialize through the coordinator daemon on shared tools.
   </Card>
   <Card title="Automatic per-worktree target dirs" icon="folder-tree" href="/essentials/isolation">
     `CARGO_TARGET_DIR` etc. are injected automatically for `tool-path` isolation.
@@ -46,12 +46,12 @@ through the single shared wrapper, each to their own config.
 ## Pre-warming the daemon
 
 If you know every agent in a repo is going to acquire the same set of
-coordinator locks, you can pre-warm `betterhookd` once at the start of a
+coordinator locks, you can pre-warm the daemon once at the start of a
 Conductor session:
 
 ```sh
 BETTERHOOK_DAEMON_SOCK=/path/to/shared.sock \
-  betterhookd --socket /path/to/shared.sock &
+  betterhook serve --socket /path/to/shared.sock &
 ```
 
 Then export `BETTERHOOK_DAEMON_SOCK=/path/to/shared.sock` in each agent's

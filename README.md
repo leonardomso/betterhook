@@ -105,7 +105,7 @@ That's it. Your next `git commit` will run the jobs defined in `betterhook.toml`
 ### Already using lefthook?
 
 ```sh
-betterhook migrate --from lefthook.yml
+betterhook import --from lefthook.yml
 # writes: betterhook.toml, BETTERHOOK_MIGRATION_NOTES.md
 betterhook install --takeover    # unset lefthook's core.hooksPath
 ```
@@ -209,7 +209,7 @@ emits one NDJSON event per line:
 {"kind":"summary","ok":true,"jobs_run":3,"jobs_skipped":0,"total":"890ms"}
 ```
 
-Agents filter on `kind == "job_end"` for pass/fail, `kind == "job_output"` for live logs, and `kind == "summary"` for the final verdict.
+Agents filter on `kind == "job_finished"` for pass/fail, `kind == "line"` for live logs, and `kind == "summary"` for the final verdict.
 
 ### Self-correction loop
 
@@ -253,7 +253,7 @@ Both return JSON plans — which jobs will run, which files they'd see, what env
 | `betterhook run <hook> [--dry-run] [--json] [--skip] [--only]` | Run a hook directly                                          |
 | `betterhook explain --hook <name> [--job <n>]`         | Print a job's resolved plan without executing                        |
 | `betterhook fix [--hook] [--job]`                      | Run every job's `fix = ...` variant (auto-format mode)               |
-| `betterhook migrate --from <lefthook.yml> [--to]`      | Convert from lefthook with notes                                     |
+| `betterhook import --from <lefthook\|husky\|hk\|pre-commit>` | Import config from another hooks tool                          |
 
 The installed wrapper dispatches to an internal `__dispatch` subcommand that's hidden from `--help`.
 
@@ -295,7 +295,7 @@ Stable contract — agents can rely on these across releases.
 ```
 betterhook/
 ├── apps/
-│   ├── betterhook/        # library crate + `betterhookd` binary
+│   ├── betterhook/        # library crate (config, runner, cache, daemon, builtins)
 │   │   ├── src/
 │   │   │   ├── config/    # multi-format parser, AST, extends, migrator
 │   │   │   ├── git/       # worktree introspection, fileset, stash
