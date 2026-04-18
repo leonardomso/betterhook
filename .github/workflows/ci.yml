@@ -37,3 +37,37 @@ jobs:
 
       - name: test
         run: cargo test --workspace
+
+  msrv:
+    name: msrv-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.86
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build (MSRV 1.86)
+        run: cargo build --workspace
+
+      - name: test (MSRV 1.86)
+        run: cargo test --workspace
+
+  fuzz-smoke:
+    name: fuzz-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build xtask
+        run: cargo build --release -p xtask
+
+      - name: fuzz-smoke
+        run: ./target/release/xtask fuzz-smoke

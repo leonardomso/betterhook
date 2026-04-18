@@ -6,7 +6,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "The betterhook CLI."
+description = "CLI for betterhook -- a fast, worktree-native git hooks manager for parallel AI agents."
+homepage = "https://github.com/leonardomso/betterhook"
+documentation = "https://github.com/leonardomso/betterhook"
+keywords = ["git", "hooks", "worktree", "cli", "linter"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "betterhook"

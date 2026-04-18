@@ -157,6 +157,7 @@ dependencies = [
  "miette",
  "notify",
  "owo-colors",
+ "regex",
  "semver",
  "serde",
  "serde_json",

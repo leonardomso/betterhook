@@ -170,6 +170,130 @@ async fn stash_guard_message_contains_betterhook() {
 }
 
 // ---------------------------------------------------------------------------
+// StashGuard safety — stash poisoning
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn stash_guard_message_matches_expected_format() {
+    let (_d, repo) = init_repo();
+    std::fs::write(repo.join("tmp.log"), "x").unwrap();
+    let guard = StashGuard::push(&repo).await.unwrap();
+    let msg = guard.message();
+    let re = regex::Regex::new(r"^betterhook-stash-\d+-\d+$").unwrap();
+    assert!(
+        re.is_match(msg),
+        "message '{msg}' should match betterhook-stash-<pid>-<nanos>"
+    );
+    guard.pop().await.unwrap();
+}
+
+#[tokio::test]
+async fn stash_displaced_by_external_push_refuses_to_pop() {
+    let (_d, repo) = init_repo();
+    std::fs::write(repo.join("scratch.log"), "data").unwrap();
+    let guard = StashGuard::push(&repo).await.unwrap();
+    assert!(guard.created());
+
+    // Push another stash on top to displace ours to stash@{1}.
+    std::fs::write(repo.join("another.txt"), "interloper").unwrap();
+    git(&repo, &["add", "another.txt"]);
+    git(&repo, &["stash", "push", "--message", "external-stash"]);
+
+    let err = guard.pop().await.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("expected top"),
+        "should refuse to pop displaced stash, got: {msg}"
+    );
+
+    // Clean up: pop both stashes manually.
+    git(&repo, &["stash", "pop"]);
+    git(&repo, &["stash", "pop"]);
+}
+
+#[tokio::test]
+async fn stash_disappeared_refuses_to_pop() {
+    let (_d, repo) = init_repo();
+    std::fs::write(repo.join("scratch.log"), "data").unwrap();
+    let guard = StashGuard::push(&repo).await.unwrap();
+    assert!(guard.created());
+
+    // Drop the stash entry from under the guard.
+    git(&repo, &["stash", "drop", "stash@{0}"]);
+
+    let err = guard.pop().await.unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("disappeared"),
+        "should report disappeared stash, got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn stash_guard_staged_only_changes() {
+    let (_d, repo) = init_repo();
+    std::fs::write(repo.join("README.md"), "updated content").unwrap();
+    git(&repo, &["add", "README.md"]);
+
+    let guard = StashGuard::push(&repo).await.unwrap();
+    assert!(guard.created());
+    guard.pop().await.unwrap();
+
+    let content = std::fs::read_to_string(repo.join("README.md")).unwrap();
+    assert_eq!(content, "updated content");
+}
+
+#[tokio::test]
+async fn stash_guard_has_no_drop_cleanup() {
+    let (_d, repo) = init_repo();
+    std::fs::write(repo.join("tmp.log"), "data").unwrap();
+    let guard = StashGuard::push(&repo).await.unwrap();
+    assert!(guard.created());
+    let msg = guard.message().to_owned();
+
+    // Drop the guard without calling pop — the stash should remain.
+    drop(guard);
+
+    let output = std::process::Command::new("git")
+        .current_dir(&repo)
+        .args(["stash", "list"])
+        .output()
+        .unwrap();
+    let stash_list = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stash_list.contains(&msg),
+        "stash should remain after guard drop (no Drop impl)"
+    );
+
+    // Manual cleanup.
+    git(&repo, &["stash", "drop", "stash@{0}"]);
+}
+
+// ---------------------------------------------------------------------------
+// rev-parse error paths
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn run_git_nonzero_exit_returns_error() {
+    let (_d, repo) = init_repo();
+    let err = run_git(&repo, ["rev-parse", "--verify", "refs/heads/nonexistent"])
+        .await
+        .unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("exited with status"), "got: {msg}");
+}
+
+#[tokio::test]
+async fn run_git_bad_cwd_returns_spawn_or_nonzero() {
+    let result = run_git(
+        std::path::Path::new("/nonexistent/path/that/does/not/exist"),
+        ["status"],
+    )
+    .await;
+    assert!(result.is_err(), "should fail with bad cwd");
+}
+
+// ---------------------------------------------------------------------------
 // Fileset template helpers
 // ---------------------------------------------------------------------------
 
