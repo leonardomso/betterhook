@@ -17,6 +17,12 @@ target
 node_modules
 bun.lockb
 
+# Turborepo (legacy, removed in v0.0.2)
+.turbo/
+
+# macOS
+.DS_Store
+
 # Local betterhook overrides (tracked-gitignored)
 betterhook.local.toml
 betterhook.local.yml

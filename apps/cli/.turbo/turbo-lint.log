@@ -1,6 +1,0 @@
-
-> @betterhook/cli@0.0.1 lint /Users/leonardomaldonado/conductor/workspaces/betterhook/montevideo/apps/cli
-> cargo clippy -p betterhook-cli -- -D warnings
-
-    Checking betterhook-cli v0.0.1 (/Users/leonardomaldonado/conductor/workspaces/betterhook/montevideo/apps/cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.06s
