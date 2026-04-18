@@ -111,10 +111,7 @@ pub enum PackageMatch<'a> {
 }
 
 #[must_use]
-pub fn resolve_packages<'a>(
-    config: &'a Config,
-    staged_files: &[PathBuf],
-) -> Vec<PackageMatch<'a>> {
+pub fn resolve_packages<'a>(config: &'a Config, staged_files: &[PathBuf]) -> Vec<PackageMatch<'a>> {
     if config.packages.is_empty() {
         return vec![PackageMatch::Root(staged_files.to_vec())];
     }
@@ -303,10 +300,7 @@ mod hook_merge_tests {
 
     #[test]
     fn package_job_replaces_root_job_of_same_name() {
-        let root = mk_hook(
-            "pre-commit",
-            vec![mk_job("lint", 0), mk_job("test", 1)],
-        );
+        let root = mk_hook("pre-commit", vec![mk_job("lint", 0), mk_job("test", 1)]);
         let pkg_hook = mk_hook("pre-commit", vec![mk_job("lint", 0)]); // pretend it's a different lint
         let config = mk_config(
             vec![root],

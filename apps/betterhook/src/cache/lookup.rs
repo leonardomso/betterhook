@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Job;
 
-use super::hash::{ArgsHash, CacheKey, ContentHash, ToolHash, args_hash_from_fields, hash_bytes, hash_file};
+use super::hash::{
+    ArgsHash, CacheKey, ContentHash, ToolHash, args_hash_from_fields, hash_bytes, hash_file,
+};
 use super::store::{CachedInput, CachedResult, Store, StoreError, StoreResult};
 use super::tool_hash::resolve_tool_hash;
 
@@ -306,7 +308,11 @@ mod tests {
         let job = job_with("eslint --cache {files}", &[]);
         let files = vec![a.clone()];
 
-        assert!(lookup_blocking(common.path(), &job, &files).unwrap().is_none());
+        assert!(
+            lookup_blocking(common.path(), &job, &files)
+                .unwrap()
+                .is_none()
+        );
 
         let result = CachedResult {
             exit: 0,
@@ -326,7 +332,11 @@ mod tests {
 
         // Modifying the file invalidates the lookup.
         std::fs::write(&a, b"beta").unwrap();
-        assert!(lookup_blocking(common.path(), &job, &files).unwrap().is_none());
+        assert!(
+            lookup_blocking(common.path(), &job, &files)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -346,7 +356,11 @@ mod tests {
             inputs: snapshot_inputs(&files),
         };
         store_blocking(common.path(), &job, &files, &result).unwrap();
-        assert!(lookup_blocking(common.path(), &job, &files).unwrap().is_some());
+        assert!(
+            lookup_blocking(common.path(), &job, &files)
+                .unwrap()
+                .is_some()
+        );
 
         // Touch the file without changing content: mtime moves, content
         // hash stays the same, but the freshness gate should still treat
@@ -357,7 +371,9 @@ mod tests {
         drop(f);
 
         assert!(
-            lookup_blocking(common.path(), &job, &files).unwrap().is_none(),
+            lookup_blocking(common.path(), &job, &files)
+                .unwrap()
+                .is_none(),
             "mtime bump should invalidate a fresh cache entry"
         );
     }

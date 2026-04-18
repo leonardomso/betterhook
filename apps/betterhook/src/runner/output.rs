@@ -218,10 +218,7 @@ fn write_event(ev: &OutputEvent) {
                 (Some(l), None) => format!("{file}:{l}"),
                 _ => file.clone(),
             };
-            let rule_tag = rule
-                .as_ref()
-                .map(|r| format!(" [{r}]"))
-                .unwrap_or_default();
+            let rule_tag = rule.as_ref().map(|r| format!(" [{r}]")).unwrap_or_default();
             eprintln!(
                 "[{}] {} {}{} {}",
                 job.color(c).bold(),

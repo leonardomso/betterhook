@@ -308,10 +308,7 @@ async fn run_sequential(
 // readability more than it helps. v1.0.1 brought it down from 243
 // lines to ~130 by extracting `execute_job_in_dag` and we stop there.
 #[allow(clippy::too_many_lines)]
-async fn run_parallel(
-    ctx: &ExecutionContext<'_>,
-    jobs: Vec<ResolvedJob>,
-) -> RunResult<RunSummary> {
+async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> RunResult<RunSummary> {
     let limit = ctx
         .hook
         .parallel_limit
@@ -374,7 +371,14 @@ async fn run_parallel(
                     })
                     .await;
                 jobs_skipped += 1;
-                release_children(&graph, idx, &pending_clone_ref(&pending), &mut pending, &started, &mut ready);
+                release_children(
+                    &graph,
+                    idx,
+                    &pending_clone_ref(&pending),
+                    &mut pending,
+                    &started,
+                    &mut ready,
+                );
                 continue;
             };
 
@@ -543,8 +547,7 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
     } = ctx;
 
     let before_unstaged = snapshot_unstaged_if_needed(&job, &worktree).await?;
-    let (_lock, lock_env) =
-        acquire_if_isolated(&job, &common_dir, &worktree, no_locks, &tx).await;
+    let (_lock, lock_env) = acquire_if_isolated(&job, &common_dir, &worktree, no_locks, &tx).await;
     let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), hook_name)];
     extra_env.extend(lock_env);
 
@@ -606,7 +609,10 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
             inputs,
         };
         if let Err(e) = crate::cache::store_result(&common_dir, &job, &plan.files, &result).await {
-            eprintln!("betterhook: WARNING — cache write for '{}' failed: {e}", job.name);
+            eprintln!(
+                "betterhook: WARNING — cache write for '{}' failed: {e}",
+                job.name
+            );
         }
     }
 
@@ -823,7 +829,13 @@ async fn resolve_job_plan(hook: &Hook, job: &Job, worktree: &Path) -> RunResult<
     // which cwd the runner later changes to.
     let abs_files: Vec<PathBuf> = files
         .iter()
-        .map(|p| if p.is_absolute() { p.clone() } else { worktree.join(p) })
+        .map(|p| {
+            if p.is_absolute() {
+                p.clone()
+            } else {
+                worktree.join(p)
+            }
+        })
         .collect();
     Ok(Some(JobPlan {
         commands,

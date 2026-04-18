@@ -20,7 +20,10 @@ const PACKAGES: &[&str] = &["alpha", "beta", "gamma", "delta", "epsilon"];
 
 pub fn run(args: &[String]) -> ExitCode {
     let total_files = FILES_PER_PACKAGE * PACKAGES.len();
-    eprintln!("bench-monorepo: generating {total_files} files across {} packages", PACKAGES.len());
+    eprintln!(
+        "bench-monorepo: generating {total_files} files across {} packages",
+        PACKAGES.len()
+    );
 
     let keep = args.iter().any(|a| a == "--keep");
     let tmp = match tempdir() {
@@ -38,11 +41,27 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 
     let mut rows: Vec<Row> = Vec::new();
-    rows.push(measure("betterhook (cold)", &repo_dir, &["betterhook", "run", "pre-commit"]));
-    rows.push(measure("betterhook (warm)", &repo_dir, &["betterhook", "run", "pre-commit"]));
+    rows.push(measure(
+        "betterhook (cold)",
+        &repo_dir,
+        &["betterhook", "run", "pre-commit"],
+    ));
+    rows.push(measure(
+        "betterhook (warm)",
+        &repo_dir,
+        &["betterhook", "run", "pre-commit"],
+    ));
     if which("hk") {
-        rows.push(measure("hk (cold)", &repo_dir, &["hk", "run", "pre-commit"]));
-        rows.push(measure("hk (warm)", &repo_dir, &["hk", "run", "pre-commit"]));
+        rows.push(measure(
+            "hk (cold)",
+            &repo_dir,
+            &["hk", "run", "pre-commit"],
+        ));
+        rows.push(measure(
+            "hk (warm)",
+            &repo_dir,
+            &["hk", "run", "pre-commit"],
+        ));
     } else {
         rows.push(Row::not_available("hk"));
     }
@@ -94,7 +113,10 @@ impl Row {
 
 fn measure(label: &str, dir: &Path, argv: &[&str]) -> Row {
     let start = Instant::now();
-    let result = Command::new(argv[0]).args(&argv[1..]).current_dir(dir).output();
+    let result = Command::new(argv[0])
+        .args(&argv[1..])
+        .current_dir(dir)
+        .output();
     let duration = start.elapsed();
     match result {
         Ok(out) => Row {
@@ -139,7 +161,11 @@ fn which(bin: &str) -> bool {
 /// that runs an instant noop hook.
 fn generate_repo(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
-    Command::new("git").arg("init").arg("-q").current_dir(dir).status()?;
+    Command::new("git")
+        .arg("init")
+        .arg("-q")
+        .current_dir(dir)
+        .status()?;
     for pkg in PACKAGES {
         let pkg_dir = dir.join("apps").join(pkg);
         std::fs::create_dir_all(&pkg_dir)?;

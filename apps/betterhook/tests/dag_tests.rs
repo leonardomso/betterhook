@@ -4,7 +4,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use betterhook::config::Job;
-use betterhook::runner::dag::{build_dag, DagError};
+use betterhook::runner::dag::{DagError, build_dag};
 
 /// Build a [`Job`] with the fields the DAG resolver cares about.
 /// Everything else gets sensible defaults.

@@ -64,7 +64,10 @@ pub fn run(_args: &[String]) -> ExitCode {
     }
     let elapsed = start.elapsed();
 
-    eprintln!("xtask stress: {WORKTREE_COUNT} worktrees finished in {} ms", elapsed.as_millis());
+    eprintln!(
+        "xtask stress: {WORKTREE_COUNT} worktrees finished in {} ms",
+        elapsed.as_millis()
+    );
     if failures > 0 {
         eprintln!("xtask stress: {failures} worktree(s) failed");
         return ExitCode::from(1);

@@ -11,12 +11,12 @@
 use std::path::{Path, PathBuf};
 
 use betterhook::builtins;
-use tokio::process::Command;
 use betterhook::daemon::speculative::read_stats;
 use betterhook::git::{git_common_dir, show_toplevel};
 use betterhook::install::{InstalledManifest, MANIFEST_FILENAME};
 use miette::{IntoDiagnostic, miette};
 use serde::Serialize;
+use tokio::process::Command;
 
 #[derive(Debug, clap::Args)]
 pub struct Args {
@@ -41,14 +41,13 @@ pub struct Check {
 }
 
 pub async fn run(args: Args) -> miette::Result<()> {
-    let worktree = args
-        .worktree
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("."));
+    let worktree = args.worktree.clone().unwrap_or_else(|| PathBuf::from("."));
     let toplevel = show_toplevel(&worktree)
         .await
         .map_err(|e| miette!("not inside a git worktree: {e}"))?;
-    let common_dir = git_common_dir(&toplevel).await.map_err(|e| miette!("{e}"))?;
+    let common_dir = git_common_dir(&toplevel)
+        .await
+        .map_err(|e| miette!("{e}"))?;
 
     let checks: Vec<Check> = vec![
         check_installed(&common_dir),
@@ -60,9 +59,7 @@ pub async fn run(args: Args) -> miette::Result<()> {
         check_core_hookspath(&toplevel).await,
     ];
 
-    let ok = checks
-        .iter()
-        .all(|c| !matches!(c.status, Status::Fail));
+    let ok = checks.iter().all(|c| !matches!(c.status, Status::Fail));
     let payload = serde_json::json!({
         "ok": ok,
         "worktree": toplevel.display().to_string(),
@@ -256,10 +253,7 @@ async fn check_orphan_stashes(worktree: &Path) -> Check {
         };
     };
     let text = String::from_utf8_lossy(&out.stdout);
-    let orphans: Vec<&str> = text
-        .lines()
-        .filter(|l| l.contains("betterhook"))
-        .collect();
+    let orphans: Vec<&str> = text.lines().filter(|l| l.contains("betterhook")).collect();
     if orphans.is_empty() {
         Check {
             name: "orphan_stashes",

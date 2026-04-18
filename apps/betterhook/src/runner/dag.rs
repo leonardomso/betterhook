@@ -139,12 +139,12 @@ pub fn build_dag(jobs: &[Job]) -> DagResult<JobGraph> {
             }
             // Pick direction by priority. Lower priority number
             // (declared earlier in `hook.priority`) runs first.
-            let (parent, child) =
-                if order_first(&nodes[a_idx].job, a_idx, &nodes[b_idx].job, b_idx) {
-                    (a_idx, b_idx)
-                } else {
-                    (b_idx, a_idx)
-                };
+            let (parent, child) = if order_first(&nodes[a_idx].job, a_idx, &nodes[b_idx].job, b_idx)
+            {
+                (a_idx, b_idx)
+            } else {
+                (b_idx, a_idx)
+            };
             nodes[parent].children.push(child);
             nodes[child].parents.push(parent);
         }
@@ -165,7 +165,10 @@ fn order_first(a: &Job, a_idx: usize, b: &Job, b_idx: usize) -> bool {
 fn build_globset(job_name: &str, patterns: &[String]) -> DagResult<Option<GlobSet>> {
     build_globset_util(patterns).map_err(|source| DagError::Glob {
         job: job_name.to_owned(),
-        pattern: patterns.first().cloned().unwrap_or_else(|| "<set>".to_owned()),
+        pattern: patterns
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "<set>".to_owned()),
         source,
     })
 }

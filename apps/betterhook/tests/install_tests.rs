@@ -20,10 +20,7 @@ use common::{git, init_repo, new_repo_with_worktrees, write_config};
 #[tokio::test]
 async fn install_creates_wrapper_in_hooks_dir() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
 
     let report = install(InstallOptions {
         worktree: Some(repo.clone()),
@@ -35,7 +32,11 @@ async fn install_creates_wrapper_in_hooks_dir() {
 
     let common = git_common_dir(&repo).await.unwrap();
     let wrapper = common.join("hooks").join("pre-commit");
-    assert!(wrapper.is_file(), "wrapper file must exist at {}", wrapper.display());
+    assert!(
+        wrapper.is_file(),
+        "wrapper file must exist at {}",
+        wrapper.display()
+    );
     assert_eq!(report.installed, vec!["pre-commit".to_string()]);
 }
 
@@ -46,10 +47,7 @@ async fn install_creates_wrapper_in_hooks_dir() {
 #[tokio::test]
 async fn install_wrapper_is_executable() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
 
     install(InstallOptions {
         worktree: Some(repo.clone()),
@@ -76,10 +74,7 @@ async fn install_wrapper_is_executable() {
 #[tokio::test]
 async fn install_writes_manifest_json() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
 
     install(InstallOptions {
         worktree: Some(repo.clone()),
@@ -138,10 +133,7 @@ async fn install_only_specified_hooks() {
 #[tokio::test]
 async fn install_refuses_foreign_core_hookspath() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
     git(&repo, &["config", "core.hooksPath", "/tmp/other"]);
 
     let err = install(InstallOptions {
@@ -153,7 +145,10 @@ async fn install_refuses_foreign_core_hookspath() {
     .unwrap_err();
 
     assert!(
-        matches!(err, betterhook::install::InstallError::ForeignCoreHooksPath { .. }),
+        matches!(
+            err,
+            betterhook::install::InstallError::ForeignCoreHooksPath { .. }
+        ),
         "expected ForeignCoreHooksPath, got {err:?}"
     );
 }
@@ -165,10 +160,7 @@ async fn install_refuses_foreign_core_hookspath() {
 #[tokio::test]
 async fn install_takeover_unsets_core_hookspath() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
     git(&repo, &["config", "core.hooksPath", "/tmp/other"]);
 
     install(InstallOptions {
@@ -199,10 +191,7 @@ async fn install_takeover_unsets_core_hookspath() {
 #[tokio::test]
 async fn install_idempotent() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
 
     let first = install(InstallOptions {
         worktree: Some(repo.clone()),
@@ -237,10 +226,7 @@ async fn install_idempotent() {
 #[tokio::test]
 async fn uninstall_removes_wrappers() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
 
     let report = install(InstallOptions {
         worktree: Some(repo.clone()),
@@ -255,10 +241,7 @@ async fn uninstall_removes_wrappers() {
 
     let un = uninstall(Some(repo.clone())).await.unwrap();
     assert_eq!(un.removed, vec!["pre-commit".to_string()]);
-    assert!(
-        !wrapper.is_file(),
-        "wrapper must be gone after uninstall"
-    );
+    assert!(!wrapper.is_file(), "wrapper must be gone after uninstall");
 }
 
 // ---------------------------------------------------------------------------
@@ -347,7 +330,10 @@ async fn each_worktree_dispatches_own_config() {
                 .collect();
             assert_eq!(names, vec!["primary-job"]);
         }
-        other => panic!("primary should Dispatch::Run, got {:?}", dispatch_tag(&other)),
+        other => panic!(
+            "primary should Dispatch::Run, got {:?}",
+            dispatch_tag(&other)
+        ),
     }
 
     // wt-0 should resolve its own (different) config.
@@ -465,10 +451,7 @@ async fn install_creates_multiple_hook_wrappers() {
 #[tokio::test]
 async fn wrapper_contains_dispatch_command() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
 
     install(InstallOptions {
         worktree: Some(repo.clone()),
@@ -503,10 +486,7 @@ async fn wrapper_contains_dispatch_command() {
 #[tokio::test]
 async fn uninstall_removes_manifest() {
     let (_d, repo) = init_repo();
-    write_config(
-        &repo,
-        "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n",
-    );
+    write_config(&repo, "[hooks.pre-commit.jobs.lint]\nrun = \"echo lint\"\n");
 
     install(InstallOptions {
         worktree: Some(repo.clone()),
@@ -554,8 +534,14 @@ async fn install_manifest_contains_hook_entries() {
     let manifest: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
 
     let hooks = manifest["hooks"].as_object().unwrap();
-    assert!(hooks.contains_key("pre-commit"), "manifest must list pre-commit");
-    assert!(hooks.contains_key("pre-push"), "manifest must list pre-push");
+    assert!(
+        hooks.contains_key("pre-commit"),
+        "manifest must list pre-commit"
+    );
+    assert!(
+        hooks.contains_key("pre-push"),
+        "manifest must list pre-push"
+    );
 
     // Each hook entry should have a sha256: prefixed value
     for (_name, sha) in hooks {

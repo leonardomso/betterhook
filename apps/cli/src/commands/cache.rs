@@ -24,11 +24,10 @@ pub enum Subcommand {
 }
 
 pub async fn run(args: Args) -> miette::Result<()> {
-    let worktree = args
-        .worktree
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("."));
-    let common_dir = git_common_dir(&worktree).await.map_err(|e| miette!("{e}"))?;
+    let worktree = args.worktree.clone().unwrap_or_else(|| PathBuf::from("."));
+    let common_dir = git_common_dir(&worktree)
+        .await
+        .map_err(|e| miette!("{e}"))?;
     let store = Store::new(&common_dir);
 
     match args.command {

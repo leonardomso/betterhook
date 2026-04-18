@@ -117,15 +117,10 @@ fn follow_mise_shim(candidate: &Path, tool: &str) -> Option<PathBuf> {
 /// Convenience wrapper for callers that want to skip the fallback
 /// (e.g. tests that want to know whether resolution actually worked).
 pub fn try_resolve_tool_hash(run_cmd: &str) -> io::Result<ToolHash> {
-    let tool = first_token(run_cmd).ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "run command is empty")
-    })?;
-    let resolved = resolve_on_path(tool).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("no '{tool}' on PATH"),
-        )
-    })?;
+    let tool = first_token(run_cmd)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "run command is empty"))?;
+    let resolved = resolve_on_path(tool)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no '{tool}' on PATH")))?;
     let concrete = follow_mise_shim(&resolved, tool).unwrap_or(resolved);
     let canonical = std::fs::canonicalize(&concrete).unwrap_or(concrete);
     let h = hash_file(&canonical)?;

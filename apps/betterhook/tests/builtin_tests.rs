@@ -55,16 +55,46 @@ fn get_returns_some_for_all_known() {
 
 #[test]
 fn severity_from_level_covers_all_known_strings() {
-    assert_eq!(common::severity_from_level("error"), DiagnosticSeverity::Error);
-    assert_eq!(common::severity_from_level("fatal"), DiagnosticSeverity::Error);
-    assert_eq!(common::severity_from_level("ERROR"), DiagnosticSeverity::Error);
-    assert_eq!(common::severity_from_level("warning"), DiagnosticSeverity::Warning);
-    assert_eq!(common::severity_from_level("warn"), DiagnosticSeverity::Warning);
-    assert_eq!(common::severity_from_level("info"), DiagnosticSeverity::Info);
-    assert_eq!(common::severity_from_level("information"), DiagnosticSeverity::Info);
-    assert_eq!(common::severity_from_level("note"), DiagnosticSeverity::Info);
-    assert_eq!(common::severity_from_level("help"), DiagnosticSeverity::Info);
-    assert_eq!(common::severity_from_level("unknown"), DiagnosticSeverity::Hint);
+    assert_eq!(
+        common::severity_from_level("error"),
+        DiagnosticSeverity::Error
+    );
+    assert_eq!(
+        common::severity_from_level("fatal"),
+        DiagnosticSeverity::Error
+    );
+    assert_eq!(
+        common::severity_from_level("ERROR"),
+        DiagnosticSeverity::Error
+    );
+    assert_eq!(
+        common::severity_from_level("warning"),
+        DiagnosticSeverity::Warning
+    );
+    assert_eq!(
+        common::severity_from_level("warn"),
+        DiagnosticSeverity::Warning
+    );
+    assert_eq!(
+        common::severity_from_level("info"),
+        DiagnosticSeverity::Info
+    );
+    assert_eq!(
+        common::severity_from_level("information"),
+        DiagnosticSeverity::Info
+    );
+    assert_eq!(
+        common::severity_from_level("note"),
+        DiagnosticSeverity::Info
+    );
+    assert_eq!(
+        common::severity_from_level("help"),
+        DiagnosticSeverity::Info
+    );
+    assert_eq!(
+        common::severity_from_level("unknown"),
+        DiagnosticSeverity::Hint
+    );
     assert_eq!(common::severity_from_level(""), DiagnosticSeverity::Hint);
 }
 

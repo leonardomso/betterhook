@@ -232,8 +232,14 @@ fn output_event_cache_hit_round_trips() {
 
 #[test]
 fn stream_variants_serialize_lowercase() {
-    assert_eq!(serde_json::to_string(&Stream::Stdout).unwrap(), "\"stdout\"");
-    assert_eq!(serde_json::to_string(&Stream::Stderr).unwrap(), "\"stderr\"");
+    assert_eq!(
+        serde_json::to_string(&Stream::Stdout).unwrap(),
+        "\"stdout\""
+    );
+    assert_eq!(
+        serde_json::to_string(&Stream::Stderr).unwrap(),
+        "\"stderr\""
+    );
 }
 
 #[test]
@@ -258,8 +264,16 @@ fn diagnostic_severity_all_variants_round_trip() {
 async fn run_command_exit_zero() {
     let (exit, events) = collect_events("true", None, None).await;
     assert_eq!(exit, 0);
-    assert!(events.iter().any(|e| matches!(e, OutputEvent::JobStarted { .. })));
-    assert!(events.iter().any(|e| matches!(e, OutputEvent::JobFinished { exit: 0, .. })));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, OutputEvent::JobStarted { .. }))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, OutputEvent::JobFinished { exit: 0, .. }))
+    );
 }
 
 #[tokio::test]
@@ -272,10 +286,12 @@ async fn run_command_nonzero_exit() {
 async fn run_command_captures_stdout() {
     let (exit, events) = collect_events("echo hello", None, None).await;
     assert_eq!(exit, 0);
-    let has_hello = events.iter().any(|e| matches!(
-        e,
-        OutputEvent::Line { stream: Stream::Stdout, line, .. } if line == "hello"
-    ));
+    let has_hello = events.iter().any(|e| {
+        matches!(
+            e,
+            OutputEvent::Line { stream: Stream::Stdout, line, .. } if line == "hello"
+        )
+    });
     assert!(has_hello, "should capture stdout line");
 }
 
@@ -283,10 +299,12 @@ async fn run_command_captures_stdout() {
 async fn run_command_captures_stderr() {
     let (exit, events) = collect_events("echo oops >&2", None, None).await;
     assert_eq!(exit, 0);
-    let has_stderr = events.iter().any(|e| matches!(
-        e,
-        OutputEvent::Line { stream: Stream::Stderr, line, .. } if line == "oops"
-    ));
+    let has_stderr = events.iter().any(|e| {
+        matches!(
+            e,
+            OutputEvent::Line { stream: Stream::Stderr, line, .. } if line == "oops"
+        )
+    });
     assert!(has_stderr, "should capture stderr line");
 }
 
@@ -303,8 +321,7 @@ async fn run_command_multiline_output() {
 
 #[tokio::test]
 async fn run_command_with_timeout() {
-    let (exit, _events) =
-        collect_events("sleep 60", Some(Duration::from_millis(100)), None).await;
+    let (exit, _events) = collect_events("sleep 60", Some(Duration::from_millis(100)), None).await;
     assert_eq!(exit, EXIT_TIMEOUT);
 }
 
@@ -365,10 +382,12 @@ async fn run_command_with_env() {
     while let Some(e) = rx.recv().await {
         events.push(e);
     }
-    let has_var = events.iter().any(|e| matches!(
-        e,
-        OutputEvent::Line { line, .. } if line == "hello_world"
-    ));
+    let has_var = events.iter().any(|e| {
+        matches!(
+            e,
+            OutputEvent::Line { line, .. } if line == "hello_world"
+        )
+    });
     assert!(has_var, "env var should be visible in child");
 }
 
@@ -394,10 +413,12 @@ async fn run_command_with_extra_env() {
     while let Some(e) = rx.recv().await {
         events.push(e);
     }
-    let has_extra = events.iter().any(|e| matches!(
-        e,
-        OutputEvent::Line { line, .. } if line == "bingo"
-    ));
+    let has_extra = events.iter().any(|e| {
+        matches!(
+            e,
+            OutputEvent::Line { line, .. } if line == "bingo"
+        )
+    });
     assert!(has_extra, "extra_env should be visible in child");
 }
 
@@ -405,8 +426,12 @@ async fn run_command_with_extra_env() {
 async fn run_command_fast_exit_emits_start_and_finish() {
     let (exit, events) = collect_events("exit 0", None, None).await;
     assert_eq!(exit, 0);
-    let has_start = events.iter().any(|e| matches!(e, OutputEvent::JobStarted { .. }));
-    let has_finish = events.iter().any(|e| matches!(e, OutputEvent::JobFinished { .. }));
+    let has_start = events
+        .iter()
+        .any(|e| matches!(e, OutputEvent::JobStarted { .. }));
+    let has_finish = events
+        .iter()
+        .any(|e| matches!(e, OutputEvent::JobFinished { .. }));
     assert!(has_start, "should always emit JobStarted");
     assert!(has_finish, "should always emit JobFinished");
 }
@@ -414,7 +439,9 @@ async fn run_command_fast_exit_emits_start_and_finish() {
 #[tokio::test]
 async fn run_command_job_finished_has_nonzero_duration() {
     let (_exit, events) = collect_events("echo hi", None, None).await;
-    let finished = events.iter().find(|e| matches!(e, OutputEvent::JobFinished { .. }));
+    let finished = events
+        .iter()
+        .find(|e| matches!(e, OutputEvent::JobFinished { .. }));
     match finished {
         Some(OutputEvent::JobFinished { duration, .. }) => {
             assert!(duration.as_nanos() > 0, "duration should be non-zero");

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use betterhook::config::{IsolateSpec, ToolPathScope};
 use betterhook::lock::protocol::{
-    LockKey, LockStatus, Request, Response, Scope, PROTOCOL_VERSION, decode_frame, encode_frame,
+    LockKey, LockStatus, PROTOCOL_VERSION, Request, Response, Scope, decode_frame, encode_frame,
 };
 use betterhook::lock::{FileLock, acquire_job_lock, key_for_spec, lock_dir};
 use tempfile::TempDir;

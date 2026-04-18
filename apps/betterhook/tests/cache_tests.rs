@@ -4,9 +4,8 @@
 use std::time::{Duration, SystemTime};
 
 use betterhook::cache::{
-    ArgsHash, CacheKey, CachedResult, ContentHash, Store, ToolHash, args_hash,
-    derive_key, hash_bytes, hash_file, inputs_fresh, lookup_blocking, snapshot_inputs,
-    store_result_blocking,
+    ArgsHash, CacheKey, CachedResult, ContentHash, Store, ToolHash, args_hash, derive_key,
+    hash_bytes, hash_file, inputs_fresh, lookup_blocking, snapshot_inputs, store_result_blocking,
 };
 use betterhook::config::{IsolateSpec, Job};
 use betterhook::runner::{OutputEvent, Stream};
@@ -180,7 +179,10 @@ fn store_verify_clean_store() {
     store.put(&fake_key("ab"), &empty_result()).unwrap();
 
     let corrupt = store.verify().unwrap();
-    assert!(corrupt.is_empty(), "freshly written entries should verify clean");
+    assert!(
+        corrupt.is_empty(),
+        "freshly written entries should verify clean"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +345,11 @@ fn lookup_blocking_miss_then_hit() {
     let files = vec![path];
 
     // miss
-    assert!(lookup_blocking(common.path(), &job, &files).unwrap().is_none());
+    assert!(
+        lookup_blocking(common.path(), &job, &files)
+            .unwrap()
+            .is_none()
+    );
 
     // store
     let result = CachedResult {
@@ -389,7 +395,9 @@ fn lookup_blocking_rejects_stale_mtime() {
     drop(f);
 
     assert!(
-        lookup_blocking(common.path(), &job, &files).unwrap().is_none(),
+        lookup_blocking(common.path(), &job, &files)
+            .unwrap()
+            .is_none(),
         "stale mtime should cause a cache miss"
     );
 }

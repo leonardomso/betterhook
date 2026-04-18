@@ -133,9 +133,7 @@ mod tests {
 
     #[test]
     fn skips_non_compiler_messages() {
-        assert!(
-            parse_line(r#"{"reason":"compiler-artifact","package_id":"p"}"#).is_none()
-        );
+        assert!(parse_line(r#"{"reason":"compiler-artifact","package_id":"p"}"#).is_none());
         assert!(parse_line("not-json").is_none());
     }
 

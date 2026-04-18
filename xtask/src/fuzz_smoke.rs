@@ -51,7 +51,11 @@ pub fn run(_args: &[String]) -> ExitCode {
             );
             continue;
         }
-        eprintln!("xtask fuzz-smoke: {name} ({} seed{})", seeds.len(), if seeds.len() == 1 { "" } else { "s" });
+        eprintln!(
+            "xtask fuzz-smoke: {name} ({} seed{})",
+            seeds.len(),
+            if seeds.len() == 1 { "" } else { "s" }
+        );
         for seed in &seeds {
             total_seeds += 1;
             // Each harness call is wrapped in `catch_unwind` so a

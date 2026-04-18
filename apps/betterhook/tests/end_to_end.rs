@@ -489,7 +489,10 @@ reads = ["**/*.ts"]
     assert!(dot.starts_with("digraph betterhook {"));
     assert!(dot.contains("\"fmt\""));
     assert!(dot.contains("\"lint\""));
-    assert!(dot.contains("->"), "conflicting writers should produce an edge");
+    assert!(
+        dot.contains("->"),
+        "conflicting writers should produce an edge"
+    );
     assert!(dot.trim_end().ends_with('}'));
 }
 
@@ -562,7 +565,10 @@ async fn import_auto_detect_unknown() {
 
 #[tokio::test]
 async fn import_from_cli_lefthook() {
-    assert_eq!(ImportSource::from_cli("lefthook"), Some(ImportSource::Lefthook));
+    assert_eq!(
+        ImportSource::from_cli("lefthook"),
+        Some(ImportSource::Lefthook)
+    );
 }
 
 #[tokio::test]
@@ -699,5 +705,8 @@ reads = ["*.ts"]
     dot.push_str("}\n");
     assert!(dot.starts_with("digraph betterhook {"));
     assert!(dot.trim_end().ends_with('}'));
-    assert!(!dot.contains("->"), "disjoint reads should produce no edges");
+    assert!(
+        !dot.contains("->"),
+        "disjoint reads should produce no edges"
+    );
 }

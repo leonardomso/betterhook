@@ -89,7 +89,9 @@ async fn staged_files_after_add() {
     git(&repo, &["add", "new.ts"]);
     let files = staged_files(&repo).await.unwrap();
     assert!(
-        files.iter().any(|f| f.file_name().is_some_and(|n| n == "new.ts")),
+        files
+            .iter()
+            .any(|f| f.file_name().is_some_and(|n| n == "new.ts")),
         "staged files should include new.ts"
     );
 }
@@ -100,7 +102,9 @@ async fn unstaged_files_after_modify() {
     std::fs::write(repo.join("README.md"), "modified").unwrap();
     let files = unstaged_files(&repo).await.unwrap();
     assert!(
-        files.iter().any(|f| f.file_name().is_some_and(|n| n == "README.md")),
+        files
+            .iter()
+            .any(|f| f.file_name().is_some_and(|n| n == "README.md")),
         "unstaged files should include modified README.md"
     );
 }
@@ -110,7 +114,9 @@ async fn all_files_returns_tracked() {
     let (_d, repo) = init_repo();
     let files = all_files(&repo).await.unwrap();
     assert!(
-        files.iter().any(|f| f.file_name().is_some_and(|n| n == "README.md")),
+        files
+            .iter()
+            .any(|f| f.file_name().is_some_and(|n| n == "README.md")),
         "all_files should include committed README.md"
     );
 }
@@ -145,7 +151,10 @@ async fn stash_guard_stashes_untracked_file() {
 
     guard.pop().await.unwrap();
     assert!(repo.join("scratch.log").exists(), "should be restored");
-    assert_eq!(std::fs::read_to_string(repo.join("scratch.log")).unwrap(), "secret");
+    assert_eq!(
+        std::fs::read_to_string(repo.join("scratch.log")).unwrap(),
+        "secret"
+    );
 }
 
 #[tokio::test]
@@ -235,8 +244,7 @@ fn filter_files_matches_glob() {
         std::path::PathBuf::from("b.rs"),
         std::path::PathBuf::from("c.tsx"),
     ];
-    let include = build_globset(&["*.ts".to_owned(), "*.tsx".to_owned()])
-        .unwrap();
+    let include = build_globset(&["*.ts".to_owned(), "*.tsx".to_owned()]).unwrap();
     let filtered = filter_files(files, include.as_ref(), None);
     assert_eq!(filtered.len(), 2);
 }

@@ -153,7 +153,8 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
 
     let (installed_shas, installed_order) = write_wrappers(&hooks_dir, &bin_str, &hook_types)?;
 
-    let (manifest_path, unit) = write_installation_metadata(&common_dir, &bin, &bin_str, &opts, installed_shas)?;
+    let (manifest_path, unit) =
+        write_installation_metadata(&common_dir, &bin, &bin_str, &opts, installed_shas)?;
 
     Ok(InstallReport {
         common_dir,

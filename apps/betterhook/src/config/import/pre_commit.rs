@@ -116,6 +116,11 @@ repos:
         let hook = &cfg.hooks["pre-commit"];
         assert_eq!(hook.jobs.len(), 2);
         assert!(hook.jobs[0].run.contains("pre-commit run"));
-        assert!(report.notes.iter().any(|n| n.contains("trailing-whitespace")));
+        assert!(
+            report
+                .notes
+                .iter()
+                .any(|n| n.contains("trailing-whitespace"))
+        );
     }
 }

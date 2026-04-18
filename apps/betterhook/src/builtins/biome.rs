@@ -93,10 +93,7 @@ fn diag_from_biome(d: BiomeDiagnostic) -> Diagnostic {
         .severity
         .as_deref()
         .map_or(DiagnosticSeverity::Warning, severity_from_level);
-    let message = d
-        .description
-        .or(d.message)
-        .unwrap_or_default();
+    let message = d.description.or(d.message).unwrap_or_default();
     let file = d
         .location
         .and_then(|l| l.path)

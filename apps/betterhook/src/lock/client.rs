@@ -144,5 +144,4 @@ mod tests {
         let (k2, _, _) = key_for_spec(&spec, Path::new("/tmp/wt-b"));
         assert_ne!(k1, k2);
     }
-
 }

@@ -12,8 +12,8 @@ use betterhook::cache::{
     ArgsHash, CacheKey, CachedInput, CachedResult, ContentHash, Store, ToolHash, args_hash,
     hash_bytes, inputs_fresh, snapshot_inputs,
 };
-use betterhook::config::{Job, parse_bytes};
 use betterhook::config::parse::Format;
+use betterhook::config::{Job, parse_bytes};
 use betterhook::runner::dag::{DagError, build_dag};
 use betterhook::runner::output::DiagnosticSeverity;
 
@@ -389,7 +389,8 @@ mod builtins {
 
     #[test]
     fn shellcheck_parser_handles_string_severity() {
-        let input = r#"[{"file":"a.sh","line":1,"column":1,"level":"info","code":1000,"message":"x"}]"#;
+        let input =
+            r#"[{"file":"a.sh","line":1,"column":1,"level":"info","code":1000,"message":"x"}]"#;
         let diags = builtins::shellcheck::parse_output(input);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].rule.as_deref(), Some("SC1000"));
@@ -488,9 +489,7 @@ mod husky {
 
 // ──────────────────────── speculative debouncer ──────────────────────
 mod speculative {
-    use betterhook::daemon::speculative::{
-        SpeculativeStats, read_stats, stats_path, write_stats,
-    };
+    use betterhook::daemon::speculative::{SpeculativeStats, read_stats, stats_path, write_stats};
 
     #[test]
     fn stats_path_is_under_betterhook_subdir() {
@@ -571,12 +570,14 @@ mod config_boundaries {
         let cmd = "echo ".to_owned() + &"x".repeat(10_000);
         let src = format!("[hooks.pre-commit.jobs.big]\nrun = \"{cmd}\"\n");
         let raw = parse_bytes(&src, Format::Toml, "long-cmd.toml").unwrap();
-        assert!(raw.hooks["pre-commit"].jobs["big"]
-            .run
-            .as_ref()
-            .unwrap()
-            .len()
-            > 10_000);
+        assert!(
+            raw.hooks["pre-commit"].jobs["big"]
+                .run
+                .as_ref()
+                .unwrap()
+                .len()
+                > 10_000
+        );
     }
 
     #[test]
@@ -670,12 +671,17 @@ mod cache_adversarial {
             tool: ToolHash("fg".to_owned() + &"0".repeat(62)),
             args: ArgsHash("h".repeat(64)),
         };
-        store.put(&key, &CachedResult {
-            exit: 0,
-            events: Vec::new(),
-            created_at: std::time::SystemTime::now(),
-            inputs: Vec::new(),
-        }).unwrap();
+        store
+            .put(
+                &key,
+                &CachedResult {
+                    exit: 0,
+                    events: Vec::new(),
+                    created_at: std::time::SystemTime::now(),
+                    inputs: Vec::new(),
+                },
+            )
+            .unwrap();
         let corrupt = store.verify().unwrap();
         assert!(corrupt.is_empty());
     }
@@ -689,12 +695,17 @@ mod cache_adversarial {
             tool: ToolHash("jk".to_owned() + &"0".repeat(62)),
             args: ArgsHash("l".repeat(64)),
         };
-        store.put(&key, &CachedResult {
-            exit: 0,
-            events: Vec::new(),
-            created_at: std::time::SystemTime::now(),
-            inputs: Vec::new(),
-        }).unwrap();
+        store
+            .put(
+                &key,
+                &CachedResult {
+                    exit: 0,
+                    events: Vec::new(),
+                    created_at: std::time::SystemTime::now(),
+                    inputs: Vec::new(),
+                },
+            )
+            .unwrap();
         let stats = store.stats().unwrap();
         assert_eq!(stats.entries, 1);
         assert!(stats.total_bytes > 0);
@@ -706,7 +717,7 @@ mod cache_adversarial {
 
 // ───────────────── importer adversarial (P13) ───────────────────────
 mod importer_adversarial {
-    use betterhook::config::import::{ImportSource, husky, lefthook, hk, pre_commit};
+    use betterhook::config::import::{ImportSource, hk, husky, lefthook, pre_commit};
 
     #[test]
     fn lefthook_empty_yaml_is_safe() {
@@ -724,7 +735,8 @@ mod importer_adversarial {
     #[test]
     fn husky_multiline_script() {
         let script = "#!/usr/bin/env sh\nset -e\nnpx lint-staged\ncargo test\n";
-        let (raw, _) = husky::from_script(script, &std::path::PathBuf::from(".husky/pre-commit")).unwrap();
+        let (raw, _) =
+            husky::from_script(script, &std::path::PathBuf::from(".husky/pre-commit")).unwrap();
         assert!(!raw.hooks["pre-commit"].jobs.is_empty());
     }
 
@@ -742,10 +754,16 @@ mod importer_adversarial {
 
     #[test]
     fn import_source_from_cli_all_variants() {
-        assert_eq!(ImportSource::from_cli("lefthook"), Some(ImportSource::Lefthook));
+        assert_eq!(
+            ImportSource::from_cli("lefthook"),
+            Some(ImportSource::Lefthook)
+        );
         assert_eq!(ImportSource::from_cli("husky"), Some(ImportSource::Husky));
         assert_eq!(ImportSource::from_cli("hk"), Some(ImportSource::Hk));
-        assert_eq!(ImportSource::from_cli("pre-commit"), Some(ImportSource::PreCommit));
+        assert_eq!(
+            ImportSource::from_cli("pre-commit"),
+            Some(ImportSource::PreCommit)
+        );
         assert!(ImportSource::from_cli("nope").is_none());
     }
 }
@@ -763,12 +781,7 @@ mod dag_boundary {
                 } else {
                     format!("unique-{i}/**/*.rs")
                 };
-                job(
-                    &format!("j-{i}"),
-                    &[],
-                    &[&write_pat],
-                    i,
-                )
+                job(&format!("j-{i}"), &[], &[&write_pat], i)
             })
             .collect();
         let dag = build_dag(&jobs).unwrap();

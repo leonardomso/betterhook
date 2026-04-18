@@ -208,7 +208,10 @@ fn speculative_handle_event_no_match() {
 
     let event = watcher_event(vec!["a.rs"]);
     let tasks = spec.handle_event(event);
-    assert!(tasks.is_empty(), "non-matching file should produce no tasks");
+    assert!(
+        tasks.is_empty(),
+        "non-matching file should produce no tasks"
+    );
 }
 
 // ---------------------------------------------------------------------------

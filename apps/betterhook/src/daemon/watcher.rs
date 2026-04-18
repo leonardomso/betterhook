@@ -77,7 +77,10 @@ impl WatcherHandle {
             if paths.is_empty() {
                 return;
             }
-            let _ = tx_for_cb.blocking_send(WatcherEvent { kind: ev.kind, paths });
+            let _ = tx_for_cb.blocking_send(WatcherEvent {
+                kind: ev.kind,
+                paths,
+            });
         });
         let mut watcher = match watcher_result {
             Ok(w) => w,
@@ -135,7 +138,6 @@ fn build_exclude_filter(patterns: &[String]) -> Result<ExcludeFilter, globset::E
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,11 +152,8 @@ mod tests {
 
     #[test]
     fn build_exclude_filter_compiles() {
-        let f = build_exclude_filter(&[
-            "**/target/**".to_owned(),
-            "**/node_modules/**".to_owned(),
-        ])
-        .unwrap();
+        let f = build_exclude_filter(&["**/target/**".to_owned(), "**/node_modules/**".to_owned()])
+            .unwrap();
         assert!(f.is_excluded(Path::new("repo/target/debug/betterhook")));
         assert!(!f.is_excluded(Path::new("repo/src/main.rs")));
     }

@@ -237,7 +237,12 @@ fn summarize_dag(hook: &crate::config::Hook) -> Option<DagSummary> {
     let edges: Vec<(String, String)> = graph
         .edges()
         .into_iter()
-        .map(|(a, b)| (graph.nodes[a].job.name.clone(), graph.nodes[b].job.name.clone()))
+        .map(|(a, b)| {
+            (
+                graph.nodes[a].job.name.clone(),
+                graph.nodes[b].job.name.clone(),
+            )
+        })
         .collect();
     Some(DagSummary {
         node_count: graph.nodes.len(),
@@ -246,4 +251,3 @@ fn summarize_dag(hook: &crate::config::Hook) -> Option<DagSummary> {
         edges,
     })
 }
-

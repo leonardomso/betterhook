@@ -51,10 +51,7 @@ fn build_digraph(hook: &betterhook::config::Hook) -> String {
     out.push_str("  rankdir = LR;\n");
     out.push_str("  node [shape=box, style=rounded, fontname=\"Inter, sans-serif\"];\n");
     for node in &graph.nodes {
-        let _ = std::fmt::Write::write_fmt(
-            &mut out,
-            format_args!("  \"{}\";\n", node.job.name),
-        );
+        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("  \"{}\";\n", node.job.name));
     }
     for (a, b) in graph.edges() {
         let _ = std::fmt::Write::write_fmt(

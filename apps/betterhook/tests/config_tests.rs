@@ -73,7 +73,10 @@ glob = ["*.ts"]
     let raw = parse_bytes(src, Format::Toml, "test.toml").unwrap();
     assert!(raw.hooks.contains_key("pre-commit"));
     assert!(raw.hooks["pre-commit"].jobs.contains_key("lint"));
-    assert_eq!(raw.hooks["pre-commit"].jobs["lint"].run, Some("eslint {files}".to_owned()));
+    assert_eq!(
+        raw.hooks["pre-commit"].jobs["lint"].run,
+        Some("eslint {files}".to_owned())
+    );
 }
 
 #[test]
@@ -281,7 +284,10 @@ fn lower_job_without_run_or_builtin_errors() {
 glob = ["*.ts"]
 "#;
     let raw = parse_bytes(src, Format::Toml, "test.toml").unwrap();
-    assert!(raw.lower().is_err(), "job with no run or builtin should fail lower");
+    assert!(
+        raw.lower().is_err(),
+        "job with no run or builtin should fail lower"
+    );
 }
 
 #[test]
@@ -445,7 +451,10 @@ run = "eslint"
     .unwrap();
 
     let raw = betterhook::config::resolve(&main).unwrap();
-    assert!(raw.hooks.contains_key("pre-commit"), "should inherit from base");
+    assert!(
+        raw.hooks.contains_key("pre-commit"),
+        "should inherit from base"
+    );
     assert!(raw.hooks.contains_key("pre-push"), "should keep own hooks");
 }
 

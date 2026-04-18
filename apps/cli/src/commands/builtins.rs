@@ -29,10 +29,7 @@ pub enum Subcommand {
 pub fn run(args: Args) -> miette::Result<()> {
     match args.command {
         Subcommand::List => {
-            let entries: Vec<_> = builtins::registry()
-                .values()
-                .map(meta_to_json)
-                .collect();
+            let entries: Vec<_> = builtins::registry().values().map(meta_to_json).collect();
             let payload = serde_json::json!({ "builtins": entries });
             println!(
                 "{}",

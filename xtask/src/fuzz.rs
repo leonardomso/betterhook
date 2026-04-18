@@ -106,7 +106,10 @@ pub fn run(args: &[String]) -> ExitCode {
     let _ = std::fs::create_dir_all(&crash_dir);
 
     for target in TARGETS {
-        if only_target.as_deref().is_some_and(|only| only != target.name) {
+        if only_target
+            .as_deref()
+            .is_some_and(|only| only != target.name)
+        {
             continue;
         }
         let seeds = match collect_seeds(&PathBuf::from(SEEDS_ROOT).join(target.seeds_dir)) {
