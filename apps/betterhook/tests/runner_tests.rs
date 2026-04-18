@@ -1,9 +1,10 @@
 //! Subprocess streaming, NDJSON output, cancellation, and event tests.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::Duration;
 
-use betterhook::runner::output::{DiagnosticSeverity, OutputEvent, Stream};
+use betterhook::runner::output::{DiagnosticSeverity, OutputEvent, SinkKind, Stream};
 use betterhook::runner::proc::{Cancel, EXIT_CANCELLED, EXIT_TIMEOUT, run_command};
 use tokio::sync::mpsc;
 
@@ -16,11 +17,20 @@ async fn collect_events(
     timeout: Option<Duration>,
     cancel: Option<&Cancel>,
 ) -> (i32, Vec<OutputEvent>) {
+    collect_events_in(cmd, Path::new("/tmp"), timeout, cancel).await
+}
+
+async fn collect_events_in(
+    cmd: &str,
+    cwd: &Path,
+    timeout: Option<Duration>,
+    cancel: Option<&Cancel>,
+) -> (i32, Vec<OutputEvent>) {
     let (tx, mut rx) = mpsc::channel(256);
     let exit = run_command(
         "test-job",
         cmd,
-        std::path::Path::new("/tmp"),
+        cwd,
         &BTreeMap::new(),
         &[],
         timeout,
@@ -35,6 +45,14 @@ async fn collect_events(
         events.push(e);
     }
     (exit, events)
+}
+
+async fn collect_events_result(
+    cmd: &str,
+    cwd: &Path,
+) -> Result<i32, betterhook::runner::RunError> {
+    let (tx, _rx) = mpsc::channel(256);
+    run_command("test-job", cmd, cwd, &BTreeMap::new(), &[], None, None, &tx).await
 }
 
 // ---------------------------------------------------------------------------
@@ -448,4 +466,199 @@ async fn run_command_job_finished_has_nonzero_duration() {
         }
         _ => panic!("should have a JobFinished event"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// run_command edge cases
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn run_command_spawn_failure_bad_cwd() {
+    let result = collect_events_result(
+        "echo hi",
+        Path::new("/nonexistent/path/that/does/not/exist"),
+    )
+    .await;
+    assert!(result.is_err(), "bad cwd should produce a spawn error");
+}
+
+#[tokio::test]
+async fn run_command_signal_exit_returns_negative_one() {
+    let (exit, _events) = collect_events("kill -9 $$", None, None).await;
+    assert!(exit != 0, "signal-killed process should not report exit 0");
+}
+
+#[tokio::test]
+async fn run_command_pre_cancelled_cancel_returns_immediately() {
+    let cancel = Cancel::new();
+    cancel.cancel();
+    let start = std::time::Instant::now();
+    let (exit, _events) = collect_events("sleep 60", None, Some(&cancel)).await;
+    assert_eq!(exit, EXIT_CANCELLED);
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "pre-cancelled command should return quickly"
+    );
+}
+
+#[tokio::test]
+async fn run_command_extra_env_overrides_env() {
+    let (tx, mut rx) = mpsc::channel(256);
+    let mut env = BTreeMap::new();
+    env.insert("TEST_KEY".to_owned(), "from_env".to_owned());
+    let extra = vec![("TEST_KEY".to_owned(), "from_extra".to_owned())];
+    let exit = run_command(
+        "override-test",
+        "echo $TEST_KEY",
+        Path::new("/tmp"),
+        &env,
+        &extra,
+        None,
+        None,
+        &tx,
+    )
+    .await
+    .unwrap();
+    drop(tx);
+    assert_eq!(exit, 0);
+    let mut events = Vec::new();
+    while let Some(e) = rx.recv().await {
+        events.push(e);
+    }
+    let has_extra = events.iter().any(|e| {
+        matches!(
+            e,
+            OutputEvent::Line { line, .. } if line == "from_extra"
+        )
+    });
+    assert!(has_extra, "extra_env should override env for the same key");
+}
+
+#[tokio::test]
+async fn run_command_event_ordering() {
+    let (_, events) = collect_events("echo one; echo two", None, None).await;
+    let first_start = events
+        .iter()
+        .position(|e| matches!(e, OutputEvent::JobStarted { .. }));
+    let last_finish = events
+        .iter()
+        .rposition(|e| matches!(e, OutputEvent::JobFinished { .. }));
+    let first_line = events
+        .iter()
+        .position(|e| matches!(e, OutputEvent::Line { .. }));
+    assert!(first_start.is_some(), "should have JobStarted");
+    assert!(last_finish.is_some(), "should have JobFinished");
+    assert!(
+        first_start.unwrap() < first_line.unwrap_or(usize::MAX),
+        "JobStarted should come before any Line"
+    );
+    assert!(
+        last_finish.unwrap() > first_line.unwrap_or(0),
+        "JobFinished should come after all Lines"
+    );
+}
+
+#[tokio::test]
+async fn run_command_timeout_does_not_hang_on_grandchildren() {
+    let start = std::time::Instant::now();
+    let (exit, _events) = collect_events(
+        "sleep 60 & sleep 60",
+        Some(Duration::from_millis(200)),
+        None,
+    )
+    .await;
+    assert_eq!(exit, EXIT_TIMEOUT);
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "should not hang waiting for orphaned grandchild"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// OutputEvent serde — Summary variant
+// ---------------------------------------------------------------------------
+
+#[test]
+fn output_event_summary_round_trips() {
+    let event = OutputEvent::Summary {
+        ok: true,
+        jobs_run: 5,
+        jobs_skipped: 2,
+        total: Duration::from_millis(1234),
+    };
+    let json = serde_json::to_string(&event).unwrap();
+    assert!(json.contains("\"kind\":\"summary\""));
+    let back: OutputEvent = serde_json::from_str(&json).unwrap();
+    match back {
+        OutputEvent::Summary {
+            ok,
+            jobs_run,
+            jobs_skipped,
+            ..
+        } => {
+            assert!(ok);
+            assert_eq!(jobs_run, 5);
+            assert_eq!(jobs_skipped, 2);
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// OutputEvent serde — Diagnostic with None line/column
+// ---------------------------------------------------------------------------
+
+#[test]
+fn output_event_diagnostic_line_only_round_trips() {
+    let event = OutputEvent::Diagnostic {
+        job: "clippy".to_owned(),
+        file: "src/main.rs".to_owned(),
+        line: Some(10),
+        column: None,
+        severity: DiagnosticSeverity::Info,
+        message: "note".to_owned(),
+        rule: None,
+    };
+    let json = serde_json::to_string(&event).unwrap();
+    let back: OutputEvent = serde_json::from_str(&json).unwrap();
+    match back {
+        OutputEvent::Diagnostic { line, column, .. } => {
+            assert_eq!(line, Some(10));
+            assert!(column.is_none());
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn output_event_diagnostic_no_location_round_trips() {
+    let event = OutputEvent::Diagnostic {
+        job: "clippy".to_owned(),
+        file: "Cargo.toml".to_owned(),
+        line: None,
+        column: None,
+        severity: DiagnosticSeverity::Error,
+        message: "bad config".to_owned(),
+        rule: Some("E0001".to_owned()),
+    };
+    let json = serde_json::to_string(&event).unwrap();
+    let back: OutputEvent = serde_json::from_str(&json).unwrap();
+    match back {
+        OutputEvent::Diagnostic { line, column, .. } => {
+            assert!(line.is_none());
+            assert!(column.is_none());
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sink lifecycle
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn json_sink_closes_on_drop() {
+    let (tx, handle) = betterhook::runner::output::sink(SinkKind::Json);
+    drop(tx);
+    handle.await.unwrap();
 }

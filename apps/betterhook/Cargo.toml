@@ -53,6 +53,7 @@ fuzz-harnesses = []
 insta = { workspace = true }
 tempfile = { workspace = true }
 criterion = { workspace = true }
+regex = "1"
 
 [[bench]]
 name = "config_parse"
