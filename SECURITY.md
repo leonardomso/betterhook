@@ -25,7 +25,7 @@ fix within 7 days for confirmed issues.
 
 Betterhook executes user-configured shell commands via `sh -c`. The
 security boundary is the same as the user's shell — betterhook does not
-sandbox the commands it runs. If a malicious `betterhook.toml` is
+sandbox the commands it runs. If a malicious betterhook config (`.toml`, `.yml`, `.kdl`, or `.json`) is
 checked into a repo, any command in it will run with the committer's
 privileges. This is by design and consistent with every other git hooks
 manager (husky, lefthook, pre-commit, hk).

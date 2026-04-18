@@ -2,7 +2,7 @@
 
 **A fast, memory-tight, worktree-native git hooks manager — built for the era of parallel AI coding agents.**
 
-`betterhook` replaces [lefthook](https://lefthook.dev) for teams and tooling where multiple coding agents (Claude Code, Cursor, Codex, Aider, ...) run in parallel via [Conductor](https://conductor.build) or similar harnesses, each in its own git worktree. It's a single static Rust binary with ~50 ms cold start, line-streaming subprocess I/O, and an opt-in coordinator daemon that serializes tool conflicts across worktrees.
+`betterhook` replaces [lefthook](https://lefthook.dev) for teams and tooling where multiple coding agents (Claude Code, Cursor, Codex, Aider, ...) run in parallel via [Conductor](https://conductor.build) or similar harnesses, each in its own git worktree. It's a single static Rust binary with ~30 ms binary start (~50 ms no-op hook run), line-streaming subprocess I/O, and an opt-in coordinator daemon that serializes tool conflicts across worktrees.
 
 ```sh
 betterhook init           # scaffold betterhook.toml
@@ -86,8 +86,9 @@ The workflow most teams are moving to: multiple coding agents running in paralle
 ## Quickstart (60 seconds)
 
 ```sh
-# 1. Install the binary
-cargo install --path apps/cli     # or: cargo install betterhook-cli (once published)
+# 1. Install the binary (from source)
+git clone https://github.com/leonardomso/betterhook && cd betterhook
+cargo install --path apps/cli
 
 # 2. Drop a starter config into your repo
 cd my-repo
@@ -284,7 +285,8 @@ Stable contract — agents can rely on these across releases.
 | `BETTERHOOK_SKIP=a,b`     | Comma-separated job names to skip for this run                  |
 | `BETTERHOOK_ONLY=a,b`     | Comma-separated allowlist (overrides everything else)           |
 | `BETTERHOOK_NO_LOCKS=1`   | Bypass the daemon and file-lock fallback entirely               |
-| `BETTERHOOK_DAEMON_SOCK`  | Explicit path to a running `betterhookd` socket (skips discovery) |
+| `BETTERHOOK_DAEMON_SOCK`  | Explicit path to the coordinator daemon socket (skips discovery)  |
+| `BETTERHOOK_HOOK`         | Set by betterhook in every job's env to the current hook name     |
 
 ---
 

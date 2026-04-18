@@ -44,4 +44,4 @@ $ betterhook doctor | jq '.checks[]'
 betterhook doctor || exit 1
 ```
 
-Always returns 0 unless something is genuinely broken.
+Returns 0 when all checks pass; non-zero when any check has `fail` status.

@@ -8,7 +8,7 @@ icon: "book-open"
 
 It's a single static Rust binary:
 
-- **~6 MB stripped**, **~50 ms cold start**
+- **~6 MB stripped**, **~30 ms binary start**, **~50 ms no-op hook run**
 - **Line-streaming subprocess I/O** via Tokio — output is live, memory is constant
 - **Worktree-native dispatch**: one wrapper in the shared `.git/hooks/` dir resolves the current worktree at commit time and loads *its* config
 - **Opt-in coordinator daemon** (`betterhook serve`) that serializes tool conflicts across worktrees

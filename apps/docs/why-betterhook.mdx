@@ -22,9 +22,9 @@ design constraint.
 | Automatic `CARGO_TARGET_DIR` per worktree     | ✓              | ✗           | ✗        | ✗          |
 | Untracked-file stash safety                   | ✓              | broken (#833)| ✗       | via script |
 | NDJSON output for agents                      | ✓              | ✗           | ✗        | ✗          |
-| Multi-format config (TOML / YAML / JSON)      | ✓              | YAML only   | JS only  | YAML only  |
+| Multi-format config (TOML / YAML / KDL / JSON)| ✓              | YAML only   | JS only  | YAML only  |
 | Binary size                                   | ~6 MB          | ~15 MB      | (node)   | (python)   |
-| Cold start                                    | ~50 ms         | ~100 ms     | slower   | slowest    |
+| Cold start (no-op hook)                       | ~50 ms         | ~100 ms     | slower   | slowest    |
 | Runtime required                              | none           | none        | Node.js  | Python     |
 
 ## The lefthook bugs betterhook fixes
