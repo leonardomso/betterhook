@@ -7,6 +7,10 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Memory-efficient, worktree-native git hooks manager built for the AI agent era."
+homepage = "https://github.com/leonardomso/betterhook"
+documentation = "https://github.com/leonardomso/betterhook"
+keywords = ["git", "hooks", "worktree", "cli", "linter"]
+categories = ["command-line-utilities", "development-tools"]
 
 [lib]
 name = "betterhook"
