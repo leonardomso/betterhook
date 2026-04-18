@@ -1,0 +1,51 @@
+---
+title: "betterhook cache"
+description: "Inspect, clear, or verify the content-addressable hook cache."
+icon: "database"
+---
+
+`betterhook cache` is the introspection surface for the CA cache that
+the speculative runner and commit-time runner share.
+
+## stats
+
+```bash
+$ betterhook cache stats
+{
+  "cache_dir": "/repo/.git/betterhook/cache",
+  "entries": 1042,
+  "total_bytes": 4_812_544,
+  "oldest_unix": 1712612400,
+  "newest_unix": 1712823900
+}
+```
+
+## verify
+
+Walks the store and re-decodes every entry. Reports any entries the
+JSON deserializer rejects as corrupt:
+
+```bash
+$ betterhook cache verify
+{
+  "cache_dir": "/repo/.git/betterhook/cache",
+  "corrupt_entries": [],
+  "ok": true
+}
+```
+
+Exit code is non-zero when at least one entry is corrupt; remediation
+is `betterhook cache clear`.
+
+## clear
+
+Wipes the entire store and reports the number of files removed:
+
+```bash
+$ betterhook cache clear
+{ "cache_dir": "...", "removed": 1042 }
+```
+
+The cache regenerates lazily on the next commit, so a clear is cheap
+to run as part of CI image bakes or after a tool upgrade you don't
+trust the mtime gate to detect.

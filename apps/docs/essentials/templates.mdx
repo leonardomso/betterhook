@@ -1,0 +1,110 @@
+---
+title: "Templates and globs"
+description: "Template variables, NUL-delimited parsing, and the include/exclude pipeline."
+icon: "file-code"
+---
+
+## Template variables
+
+Use any of these inside a job's `run` or `fix` value. betterhook substitutes them
+with the shell-escaped file list at execution time.
+
+| Variable          | Expands to                                                         |
+|-------------------|--------------------------------------------------------------------|
+| `{staged_files}`  | `git diff --name-only --cached -z`                                 |
+| `{push_files}`    | `git diff --name-only -z <remote-ref>...HEAD` (for pre-push hooks) |
+| `{all_files}`     | `git ls-files -z`                                                  |
+| `{files}`         | The glob-filtered subset of whichever file set is active           |
+
+<Note>
+  Every file set is parsed from **NUL-delimited** git output via
+  `OsStr::from_bytes`, so paths with spaces, unicode, or leading dashes
+  round-trip correctly. This is the direct fix for a whole category of
+  lefthook quoting bugs.
+</Note>
+
+## The filter pipeline
+
+```text
+git -z output
+    │
+    ▼
+┌───────────┐
+│ globset   │  glob = ["*.ts", "*.tsx"]
+├───────────┤  exclude = ["**/*.gen.ts"]
+▼           ▼
+filtered files
+    │
+    ▼
+shell-escape each entry
+    │
+    ▼
+substitute into {staged_files}
+    │
+    ▼
+if ARG_MAX would blow → chunk into multiple invocations
+    │
+    ▼
+sh -c "eslint a.ts b.ts ..."
+```
+
+### Empty file lists
+
+If a job has a template but its filtered list is empty, **the job is skipped**
+with `reason = "no files matched glob"`. This prevents running `eslint` with
+no arguments and having it lint the world.
+
+<Warning>
+  If you don't want this behavior, drop the template variable entirely —
+  `run = "eslint --cache"` will always execute.
+</Warning>
+
+### ARG_MAX chunking
+
+macOS's `ARG_MAX` is 256 KB. betterhook caps each shell invocation at
+**128 KB** of file-list arguments and chunks the rest into additional
+invocations, aggregating exit codes. You almost never need to worry about this.
+
+## Glob syntax
+
+betterhook uses [`globset`](https://docs.rs/globset) — the same engine as
+ripgrep. Highlights:
+
+<AccordionGroup>
+  <Accordion title="Extension match" icon="file">
+    ```toml
+    glob = ["*.ts", "*.tsx"]
+    ```
+  </Accordion>
+  <Accordion title="Recursive match" icon="folder-tree">
+    ```toml
+    glob = ["**/*.test.ts"]
+    ```
+  </Accordion>
+  <Accordion title="Multi-directory" icon="folders">
+    ```toml
+    glob = ["src/**/*.rs", "benches/**/*.rs"]
+    ```
+  </Accordion>
+  <Accordion title="Negation via exclude" icon="circle-slash">
+    ```toml
+    glob    = ["**/*.rs"]
+    exclude = ["**/vendor/**", "**/*.gen.rs"]
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Special handling by hook type
+
+- **`pre-push`**: Defaults to `{push_files}` (diff against `HEAD~1` as a coarse
+  approximation). A future phase will read the remote ref from the hook's
+  positional args.
+- **`pre-commit`** and everything else: Defaults to `{staged_files}`.
+- **`{all_files}`**: Always fetches the full tracked file list regardless of hook type.
+
+## Shell escaping
+
+Every file passed into a template goes through `shell_escape`. Paths that
+only contain `[a-zA-Z0-9./_\-:@+]` round-trip bare; anything else gets
+wrapped in single quotes with embedded `'` characters correctly escaped.
+You can safely use paths with spaces, unicode, and shell metacharacters.

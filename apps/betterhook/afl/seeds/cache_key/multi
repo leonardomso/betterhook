@@ -1,0 +1,4 @@
+eslint
+--fix
+a.ts
+b.ts

@@ -1,0 +1,147 @@
+---
+title: "NDJSON output"
+description: "The stable event schema for betterhook run --json."
+icon: "braces"
+---
+
+`betterhook run --json` and `betterhook __dispatch --json` emit one
+newline-delimited JSON event per line. Every event is tagged with a
+`kind` discriminator. The schema is **additive-only** across versions —
+fields may be added, never renamed or removed.
+
+## Event kinds
+
+<AccordionGroup>
+  <Accordion title="job_started" icon="play">
+    Emitted when a job's subprocess is about to spawn.
+
+    ```json
+    {
+      "kind": "job_started",
+      "hook": "pre-commit",
+      "job": "lint",
+      "cmd": "eslint --cache --fix a.ts b.ts",
+      "files": ["a.ts", "b.ts"],
+      "pid": 1234
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="line" icon="file-text">
+    One line of subprocess output. Emitted as soon as the subprocess writes
+    it — no buffering.
+
+    ```json
+    {
+      "kind": "line",
+      "job": "lint",
+      "stream": "stdout",
+      "line": "a.ts: clean"
+    }
+    ```
+
+    `stream` is `"stdout"` or `"stderr"`.
+  </Accordion>
+
+  <Accordion title="job_finished" icon="check">
+    The subprocess has exited and the job has a final verdict.
+
+    ```json
+    {
+      "kind": "job_finished",
+      "job": "lint",
+      "exit": 0,
+      "duration": "312ms"
+    }
+    ```
+
+    `exit` is the subprocess exit code. `124` means the per-job timeout fired;
+    `130` means the job was cancelled (fail_fast in a sibling, or SIGINT).
+  </Accordion>
+
+  <Accordion title="job_skipped" icon="circle-slash">
+    The job was not run. The `reason` is human-readable.
+
+    ```json
+    {
+      "kind": "job_skipped",
+      "job": "lint",
+      "reason": "no files matched glob"
+    }
+    ```
+
+    Possible reasons:
+    - `"no files matched glob"` — the template was expanded but the filtered file list was empty
+    - `"filtered by --skip/--only"` — the runtime filter dropped this job
+    - `"BETTERHOOK_NO_LOCKS set — running unlocked"` — informational, emitted when --no-locks degrades an isolated job
+  </Accordion>
+
+  <Accordion title="summary" icon="receipt">
+    The final event. Always emitted last, even on failure.
+
+    ```json
+    {
+      "kind": "summary",
+      "ok": true,
+      "jobs_run": 3,
+      "jobs_skipped": 1,
+      "total": "890ms"
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Parsing recipes
+
+<CodeGroup>
+```sh jq — pass/fail
+betterhook run pre-commit --json \
+  | jq -r 'select(.kind == "summary") | .ok'
+# true or false
+```
+
+```sh jq — failed jobs with exit codes
+betterhook run pre-commit --json \
+  | jq -r 'select(.kind == "job_finished" and .exit != 0) | "\(.job): exit \(.exit)"'
+```
+
+```sh jq — collect stderr from a specific job
+betterhook run pre-commit --json \
+  | jq -r 'select(.kind == "line" and .job == "lint" and .stream == "stderr") | .line'
+```
+
+```python Python streaming parser
+import json, subprocess
+
+proc = subprocess.Popen(
+    ["betterhook", "run", "pre-commit", "--json"],
+    stdout=subprocess.PIPE, text=True,
+)
+for line in proc.stdout:
+    event = json.loads(line)
+    if event["kind"] == "job_finished" and event["exit"] != 0:
+        print(f"FAIL: {event['job']} exited {event['exit']}")
+    elif event["kind"] == "summary":
+        if event["ok"]:
+            print(f"ok ({event['total']})")
+        break
+```
+</CodeGroup>
+
+## Stability
+
+<Check>Every `kind` value and its required fields are stable across v0.x.</Check>
+<Check>New optional fields may be added without a version bump.</Check>
+<Check>New `kind` variants may be added without a version bump — your parser should ignore unknown kinds.</Check>
+<Warning>Field types are stable. We will never silently change `duration` from a string to a number, for example.</Warning>
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="Self-correction loop" icon="refresh-cw" href="/agents/self-correction">
+    How to wire NDJSON output into an auto-fix agent.
+  </Card>
+  <Card title="Exit codes" icon="list-checks" href="/reference/exit-codes">
+    The process-level exit-code contract.
+  </Card>
+</CardGroup>

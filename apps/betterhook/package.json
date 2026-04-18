@@ -1,0 +1,11 @@
+{
+  "name": "@betterhook/core",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "cargo build -p betterhook",
+    "test": "cargo test -p betterhook",
+    "lint": "cargo clippy -p betterhook -- -D warnings",
+    "bench": "cargo bench -p betterhook"
+  }
+}

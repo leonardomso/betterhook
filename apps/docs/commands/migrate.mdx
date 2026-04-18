@@ -1,0 +1,111 @@
+---
+title: "betterhook migrate (deprecated)"
+description: "Hidden alias for `betterhook import --from-format lefthook`."
+icon: "arrow-right-left"
+---
+
+<Warning>
+  `betterhook migrate` is deprecated and will be removed in a future
+  release. Use [`betterhook import`](/commands/import) instead, which
+  supports lefthook, husky, hk, and pre-commit.
+</Warning>
+
+```sh
+betterhook migrate [--from lefthook.yml] [--to betterhook.toml] [--notes BETTERHOOK_MIGRATION_NOTES.md] [--force]
+```
+
+A best-effort converter that reads a `lefthook.yml`, produces an equivalent
+`betterhook.toml`, and writes a companion markdown notes file explaining
+what changed, what was dropped, and what to double-check.
+
+## Flags
+
+<ParamField path="--from" type="path" default="lefthook.yml">
+  Source lefthook config.
+</ParamField>
+<ParamField path="--to" type="path" default="betterhook.toml">
+  Output file.
+</ParamField>
+<ParamField path="--notes" type="path" default="BETTERHOOK_MIGRATION_NOTES.md">
+  Where to write the human-readable migration report.
+</ParamField>
+<ParamField path="--force" type="flag">
+  Overwrite an existing output file.
+</ParamField>
+
+## Supported lefthook fields
+
+Hook-level:
+
+- `parallel`
+- `follow` → mapped to inverted `fail_fast`
+- `commands.*` → `jobs.*`
+
+Command-level:
+
+- `run`, `glob`, `exclude`, `tags`, `skip`, `only`
+- `env`, `root`, `stage_fixed`, `interactive`, `fail_text`
+- `pool` / `isolate` → mapped to betterhook's isolate table
+
+## What's dropped
+
+Listed in the generated `BETTERHOOK_MIGRATION_NOTES.md`:
+
+- `extends`, `remotes`, `templates` blocks — our implementation is different
+  and richer; rewrite by hand
+- `scripts` (lefthook's shell-script loader) — use `run = "./scripts/foo.sh"` directly
+- `piped` — not yet supported; use `fail_fast = true` as an approximation
+
+## Example
+
+```sh
+$ betterhook migrate --from lefthook.yml
+wrote betterhook.toml
+wrote BETTERHOOK_MIGRATION_NOTES.md
+
+$ cat BETTERHOOK_MIGRATION_NOTES.md
+# Betterhook migration notes
+
+Converted `lefthook.yml` to `betterhook.toml`.
+
+## Items that changed or were dropped
+
+- extends / remotes / templates blocks are not supported by the migrator and were dropped
+
+## Things to double-check
+
+- Priority ordering: if you relied on lefthook's `parallel: true` plus
+  implicit priorities, set an explicit `priority = ["a", "b"]` list at
+  the hook level.
+- `timeout`: lefthook does not enforce per-job timeouts. Betterhook does —
+  consider setting one.
+- `isolate`: if multiple worktrees run the same tool, declare `isolate`
+  so the coordinator daemon can serialize.
+```
+
+## What to do after migrating
+
+<Steps>
+  <Step title="Read the notes">
+    Skim `BETTERHOOK_MIGRATION_NOTES.md` top to bottom. Address anything called out.
+  </Step>
+  <Step title="Take over the hook install">
+    ```sh
+    betterhook install --takeover
+    ```
+    Unsets lefthook's hook path and writes our wrappers.
+  </Step>
+  <Step title="Remove lefthook">
+    Once you've verified a commit works end-to-end:
+    ```sh
+    rm lefthook.yml
+    # npm: pnpm remove lefthook
+    # brew: brew uninstall lefthook
+    # cargo: cargo uninstall lefthook
+    ```
+  </Step>
+  <Step title="Optional: declare isolate for agent workflows">
+    Every tool you run in parallel worktrees wants an `isolate` key.
+    See [Isolation](/essentials/isolation).
+  </Step>
+</Steps>

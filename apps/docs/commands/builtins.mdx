@@ -1,0 +1,58 @@
+---
+title: "betterhook builtins"
+description: "Discover the bundled linter and formatter wrappers."
+icon: "package"
+---
+
+`betterhook builtins` is the discovery endpoint for agents and humans
+who want to know which tools betterhook knows how to wrap and what the
+default capability fields look like.
+
+## list
+
+```bash
+$ betterhook builtins list | jq '.builtins[].name'
+"biome"
+"black"
+"clippy"
+"eslint"
+"gitleaks"
+"gofmt"
+"govet"
+"oxlint"
+"prettier"
+"ruff"
+"rustfmt"
+"shellcheck"
+```
+
+Each entry includes `description`, `run`, optional `fix`, default
+`glob`, capability fields (`reads`, `writes`, `network`,
+`concurrent_safe`), and the `tool_binary` betterhook expects to find
+on `PATH`.
+
+## show
+
+```bash
+$ betterhook builtins show clippy
+{
+  "name": "clippy",
+  "description": "Rust lints via `cargo clippy --message-format=json`.",
+  "run": "cargo clippy --workspace --all-targets --message-format=json -- -D warnings",
+  "fix": "cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged",
+  "glob": ["*.rs"],
+  "reads": ["**/*.rs", "**/Cargo.toml", "**/Cargo.lock"],
+  "writes": [],
+  "network": false,
+  "concurrent_safe": true,
+  "tool_binary": "cargo"
+}
+```
+
+## Diagnostics
+
+Every builtin's parser converts the tool's native output into
+`OutputEvent::Diagnostic` records on the same NDJSON stream the
+multiplexer already uses. Agents reading `--json` get structured
+results — file, line, column, severity, rule, message — without
+having to scrape unstructured text.

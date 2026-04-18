@@ -1,0 +1,39 @@
+---
+title: "From lefthook"
+description: "Convert a lefthook.yml to betterhook.toml in one command."
+icon: "arrow-right"
+---
+
+<Steps>
+  <Step title="Run the migrator">
+    ```sh
+    betterhook import --from lefthook.yml
+    ```
+    Writes `betterhook.toml` and `BETTERHOOK_MIGRATION_NOTES.md` alongside.
+  </Step>
+  <Step title="Read the notes">
+    Skim `BETTERHOOK_MIGRATION_NOTES.md`. It lists every field that was
+    dropped or transformed and every "double-check this" item.
+  </Step>
+  <Step title="Install with --takeover">
+    ```sh
+    betterhook install --takeover
+    ```
+    Unsets lefthook's `core.hooksPath` and writes the betterhook wrapper.
+  </Step>
+  <Step title="Verify a commit">
+    ```sh
+    betterhook run pre-commit
+    git commit --allow-empty -m "migration smoke test"
+    ```
+  </Step>
+  <Step title="Remove lefthook">
+    ```sh
+    rm lefthook.yml
+    # and uninstall the binary (npm/cargo/brew)
+    ```
+  </Step>
+</Steps>
+
+See the full [`betterhook migrate`](/commands/migrate) reference for
+supported fields and known gaps.

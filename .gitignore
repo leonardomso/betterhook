@@ -13,6 +13,31 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
+# Node / bun
+node_modules
+bun.lockb
+
+# Turborepo (legacy, removed in v0.0.2)
+.turbo/
+
+# macOS
+.DS_Store
+
+# Local betterhook overrides (tracked-gitignored)
+betterhook.local.toml
+betterhook.local.yml
+betterhook.local.yaml
+betterhook.local.json
+
+# cargo-fuzz artifacts
+apps/betterhook/fuzz/target/
+apps/betterhook/fuzz/corpus/
+apps/betterhook/fuzz/artifacts/
+apps/betterhook/fuzz/coverage/
+
+# Mintlify local cache
+apps/docs/.mintlify/
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

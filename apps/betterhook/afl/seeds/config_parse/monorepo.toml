@@ -1,0 +1,11 @@
+[meta]
+version = 1
+
+[packages.frontend]
+path = "apps/web"
+
+[packages.api]
+path = "services/api"
+
+[packages.frontend.hooks.pre-commit.jobs.lint]
+run = "bun run --filter frontend lint"

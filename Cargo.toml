@@ -1,0 +1,51 @@
+[workspace]
+resolver = "3"
+members = ["apps/betterhook", "apps/cli", "xtask"]
+
+[workspace.package]
+version = "0.0.2"
+edition = "2024"
+license = "MIT"
+authors = ["Leonardo Maldonado"]
+repository = "https://github.com/leonardomso/betterhook"
+rust-version = "1.86"
+
+[workspace.dependencies]
+tokio = { version = "1.51", features = ["full"] }
+tokio-util = { version = "0.7.18", features = ["codec"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+toml = "1.1"
+serde_yaml_ng = "0.10"
+kdl = "6.5"
+clap = { version = "4.6", features = ["derive"] }
+miette = { version = "7.6", features = ["fancy"] }
+thiserror = "2.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
+globset = "0.4.18"
+owo-colors = "4.3"
+humantime = "2.3"
+humantime-serde = "1.1"
+sha2 = "0.11"
+blake3 = { version = "1.8", features = ["mmap"] }
+which = "8"
+notify = "8"
+semver = { version = "1.0.28", features = ["serde"] }
+bincode = { version = "2.0", features = ["serde"] }
+fs4 = "0.13"
+tempfile = "3.27"
+insta = { version = "1.47", features = ["yaml", "toml", "json", "filters"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+multiple_crate_versions = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

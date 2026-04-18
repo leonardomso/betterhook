@@ -1,0 +1,142 @@
+---
+title: "Config formats"
+description: "Write your config in TOML, YAML, KDL, or JSON — pick whichever you prefer."
+icon: "code"
+---
+
+betterhook accepts `betterhook.toml`, `betterhook.yml` / `betterhook.yaml`,
+`betterhook.kdl`, and `betterhook.json`. The parser auto-detects by extension.
+
+Internally, every format deserializes into **one canonical `RawConfig` struct**
+via serde — so there's no behavioral difference downstream. You can even mix
+formats via `extends` (a `betterhook.toml` extending a `base.yml` works).
+
+## Lookup order
+
+When betterhook looks for a config in a worktree root, it tries:
+
+<Steps>
+  <Step title="betterhook.toml">
+    Most idiomatic in a Rust project.
+  </Step>
+  <Step title="betterhook.yml or betterhook.yaml">
+    Most familiar to lefthook / pre-commit users.
+  </Step>
+  <Step title="betterhook.kdl">
+    Clean, node-based syntax. Good fit if you like concise config files.
+  </Step>
+  <Step title="betterhook.json">
+    Best if your tooling generates the config programmatically.
+  </Step>
+</Steps>
+
+The **first file that exists wins**. If multiple candidates are present,
+betterhook warns and uses the first.
+
+## Side-by-side example
+
+<CodeGroup>
+```toml betterhook.toml
+[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+priority = ["fmt", "lint"]
+
+[hooks.pre-commit.jobs.fmt]
+run = "prettier --write {staged_files}"
+glob = ["*.ts", "*.tsx"]
+stage_fixed = true
+isolate = "prettier"
+
+[hooks.pre-commit.jobs.lint]
+run = "eslint --cache --fix {staged_files}"
+glob = ["*.ts", "*.tsx"]
+isolate = "eslint"
+```
+
+```yaml betterhook.yml
+meta:
+  version: 1
+
+hooks:
+  pre-commit:
+    parallel: true
+    priority: [fmt, lint]
+    jobs:
+      fmt:
+        run: "prettier --write {staged_files}"
+        glob: ["*.ts", "*.tsx"]
+        stage_fixed: true
+        isolate: "prettier"
+      lint:
+        run: "eslint --cache --fix {staged_files}"
+        glob: ["*.ts", "*.tsx"]
+        isolate: "eslint"
+```
+
+```json betterhook.json
+{
+  "meta": { "version": 1 },
+  "hooks": {
+    "pre-commit": {
+      "parallel": true,
+      "priority": ["fmt", "lint"],
+      "jobs": {
+        "fmt": {
+          "run": "prettier --write {staged_files}",
+          "glob": ["*.ts", "*.tsx"],
+          "stage_fixed": true,
+          "isolate": "prettier"
+        },
+        "lint": {
+          "run": "eslint --cache --fix {staged_files}",
+          "glob": ["*.ts", "*.tsx"],
+          "isolate": "eslint"
+        }
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+All three produce the same in-memory `Config` and run identically.
+
+## Choosing a format
+
+<CardGroup cols={2}>
+  <Card title="TOML" icon="book">
+    **Best default.** Diffable, line-oriented, no indentation surprises.
+    Matches the Rust ecosystem.
+  </Card>
+  <Card title="YAML" icon="list">
+    **Familiar to JS/Python teams.** Matches existing lefthook /
+    pre-commit muscle memory.
+  </Card>
+  <Card title="KDL" icon="code">
+    **Clean and concise.** Node-based syntax with less nesting than TOML.
+  </Card>
+  <Card title="JSON" icon="braces">
+    **Best for generated configs.** Trivial to produce from a build
+    script or template engine.
+  </Card>
+</CardGroup>
+
+<Warning>
+  We still recommend **not** checking in more than one. If two `betterhook.*`
+  files exist in the same directory, betterhook prints a warning and uses the
+  first it finds.
+</Warning>
+
+## Schema validation
+
+Every format goes through the same `serde` schema that enforces:
+
+- `deny_unknown_fields` — typos are rejected with the field path
+- Typed validation of `timeout` (humantime), `min_betterhook` (semver), and `isolate`
+- Required fields (every job must have a `run`)
+- Miette diagnostics with source spans in the error output
+
+See the `ConfigError` variants in [reference/exit-codes](/reference/exit-codes#config-errors).

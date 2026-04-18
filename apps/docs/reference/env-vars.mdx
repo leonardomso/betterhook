@@ -1,0 +1,87 @@
+---
+title: "Environment variables"
+description: "Every environment variable betterhook reads."
+icon: "key"
+---
+
+| Variable                    | Default | Purpose                                                          |
+|-----------------------------|---------|------------------------------------------------------------------|
+| `BETTERHOOK_SKIP`           | —       | Comma-separated job names to skip for this run                   |
+| `BETTERHOOK_ONLY`           | —       | Comma-separated allowlist — when set, every other job is skipped |
+| `BETTERHOOK_NO_LOCKS`       | unset   | Bypass the daemon and file-lock fallback entirely                |
+| `BETTERHOOK_DAEMON_SOCK`    | —       | Explicit daemon socket path (skips auto-discovery + spawn)       |
+
+## BETTERHOOK_SKIP
+
+```sh
+BETTERHOOK_SKIP=tests,slow-lint git commit -m "wip"
+```
+
+Skips jobs named `tests` or `slow-lint` for this run. Skipped jobs emit
+`JobSkipped { reason: "filtered by --skip/--only" }` in NDJSON mode.
+
+The `--skip` flag on `betterhook run` and `betterhook __dispatch`
+overrides the env var.
+
+## BETTERHOOK_ONLY
+
+```sh
+BETTERHOOK_ONLY=lint git commit -m "lint only"
+```
+
+Runs **only** the `lint` job. Every other job is skipped with the same
+reason as `SKIP`. `--only` on the CLI overrides.
+
+<Warning>
+  `ONLY` and `SKIP` can be combined, but `ONLY` wins: if both are set,
+  only jobs in `ONLY` that are **not** in `SKIP` run.
+</Warning>
+
+## BETTERHOOK_NO_LOCKS
+
+```sh
+BETTERHOOK_NO_LOCKS=1 betterhook run pre-commit
+```
+
+Disables the coordinator daemon and the flock fallback entirely. Every
+job with `isolate` runs unlocked, with a warning on stderr. Use sparingly
+— this is an escape hatch for debugging, not a production setting.
+
+The `--no-locks` CLI flag has the same effect.
+
+## BETTERHOOK_DAEMON_SOCK
+
+```sh
+BETTERHOOK_DAEMON_SOCK=/tmp/shared.sock betterhook run pre-commit
+```
+
+Tells the lock client to connect directly to the given socket, skipping
+auto-discovery under `<common-dir>/betterhook/sock` and skipping the
+spawn-retry path.
+
+Use this when you've pre-warmed a daemon (e.g. in a Conductor session)
+and want every agent to share the same instance. See
+[Conductor integration](/agents/conductor).
+
+## Other env visible to jobs
+
+In addition to whatever your shell exports, betterhook injects these into
+every job's environment:
+
+| Variable                  | Value                                                       |
+|---------------------------|-------------------------------------------------------------|
+| `BETTERHOOK_HOOK`         | The hook name being run (e.g. `pre-commit`)                  |
+| `CARGO_TARGET_DIR`        | Set automatically for `isolate = { tool = "cargo", target_dir = "per-worktree" }` |
+
+Your `betterhook.toml` can also set per-job `env` — see
+[Configuration](/essentials/configuration#hooks-hook-jobs-name).
+
+## Environment *not* used
+
+betterhook deliberately **does not** read:
+
+- `GIT_DIR` — we always use `git rev-parse --absolute-git-dir` and pass
+  it explicitly to every git subprocess. Inheriting `$GIT_DIR` is the
+  root cause of lefthook's worktree bugs.
+- `LEFTHOOK_*` env vars — no compat mode. Use `betterhook migrate` to
+  convert your config.

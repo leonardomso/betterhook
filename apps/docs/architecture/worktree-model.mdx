@@ -1,0 +1,118 @@
+---
+title: "Worktree model"
+description: "The git primitives betterhook relies on and why they matter."
+icon: "git-branch"
+---
+
+## Git's storage model
+
+When you create a linked worktree via `git worktree add`, git creates a
+private dir under `<main-repo>/.git/worktrees/<worktree-id>/` that holds:
+
+- `HEAD`
+- `index`
+- a `gitdir` file pointing at the worktree's working directory
+- Other per-worktree state (`ORIG_HEAD`, `logs/`, …)
+
+Everything else — **`refs/`, `config`, `hooks/`, `info/`, `objects/`** —
+lives in the main repo's `.git/` dir and is **shared** across every worktree.
+
+This is both the problem and the opportunity.
+
+## The three git commands that matter
+
+<Tabs>
+  <Tab title="rev-parse --git-dir">
+    ```sh
+    git rev-parse --git-dir
+    ```
+    Returns the **current worktree's private git dir** — e.g.
+    `.git/worktrees/wt-auth/`. Different per worktree.
+  </Tab>
+  <Tab title="rev-parse --git-common-dir">
+    ```sh
+    git rev-parse --git-common-dir
+    ```
+    Returns the **shared common dir** — e.g. `.git/`. Same across every worktree.
+    This is where `hooks/` lives.
+  </Tab>
+  <Tab title="rev-parse --show-toplevel">
+    ```sh
+    git rev-parse --show-toplevel
+    ```
+    Returns the **current worktree's working directory** — e.g. `/Users/you/repo` or
+    `/Users/you/repo/wt-auth`. Different per worktree.
+  </Tab>
+</Tabs>
+
+The key insight: **`hooks/` is shared but `show-toplevel` is not.** This
+is what makes the worktree-aware wrapper possible.
+
+## The betterhook wrapper
+
+<Frame>
+```text
+┌────────────────────────────────┐     ┌────────────────────────────────┐
+│       Worktree A (wt-auth)     │     │       Worktree B (wt-ui)       │
+│       /repo/wt-auth            │     │       /repo/wt-ui              │
+│       betterhook.toml          │     │       betterhook.toml          │
+│       └─ fmt, lint, test       │     │       └─ fmt, tsc, e2e         │
+└──────────────┬─────────────────┘     └──────────────┬─────────────────┘
+               │                                      │
+         git rev-parse                           git rev-parse
+       --show-toplevel                         --show-toplevel
+               │                                      │
+               ▼                                      ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Shared common dir (/repo/.git)                   │
+│                                                                     │
+│         hooks/pre-commit   <── ONE byte-identical wrapper           │
+│                                                                     │
+│         exec "/path/to/betterhook" __dispatch                       │
+│              --hook pre-commit                                      │
+│              --worktree $(git rev-parse --show-toplevel)            │
+└─────────────────────────────────────────────────────────────────────┘
+               │                                      │
+               ▼                                      ▼
+       loads wt-auth's                       loads wt-ui's
+       betterhook.toml                       betterhook.toml
+       runs fmt+lint+test                    runs fmt+tsc+e2e
+```
+</Frame>
+
+A single wrapper script dispatches per-worktree because `git rev-parse
+--show-toplevel` returns the *current* worktree even though `$0` is the
+shared file.
+
+## Install & uninstall semantics
+
+betterhook's install logic:
+
+1. `git rev-parse --git-common-dir` → find the shared hooks dir
+2. Write one wrapper into `<common-dir>/hooks/<hookname>` per hook type
+3. chmod +x
+4. Record each wrapper's SHA-256 in `<common-dir>/betterhook/installed.json`
+
+Uninstall:
+
+1. Read `installed.json`
+2. For each recorded hook, SHA the current file and remove **only** if it matches
+3. Delete the manifest last
+
+User-modified wrappers are never touched. Installs from different
+worktrees are idempotent because the wrapper content is byte-identical.
+
+## Why not libgit2 / gix?
+
+Both have historically assumed `$GIT_DIR == $GIT_COMMON_DIR` in parts of
+their API, which is the *exact* bug lefthook inherits. betterhook shells
+out to the user's `git` binary via `tokio::process::Command` for every git
+call. Every invocation inherits the environment naturally, every call
+runs as an async subprocess, and we pay **zero** binary-size cost for the
+correctness.
+
+<Note>
+  We may port hot paths (`ls-files`, `rev-parse`) to `gix` in a later
+  phase if benchmarks show subprocess spawn overhead is material. Even
+  then, the worktree logic stays subprocess-based.
+</Note>

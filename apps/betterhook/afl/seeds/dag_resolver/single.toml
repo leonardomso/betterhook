@@ -1,0 +1,3 @@
+[hooks.pre-commit.jobs.solo]
+run = "true"
+reads = ["**/*.rs"]

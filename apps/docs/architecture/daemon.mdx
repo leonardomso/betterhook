@@ -1,0 +1,128 @@
+---
+title: "Coordinator daemon"
+description: "The opt-in coordinator daemon that serializes tool conflicts across worktrees."
+icon: "server"
+---
+
+The coordinator daemon (`betterhook serve`) is an **opt-in** process that serializes access to
+cross-worktree shared tools (ESLint cache, cargo target dir, prettier on
+lockfiles). It **never runs** unless a hook declares `isolate` on at
+least one job.
+
+## Design principles
+
+<Check>**Opt-in**: zero RSS cost when no job declares `isolate`.</Check>
+<Check>**Spawn-and-die**: first `isolate` acquire starts the daemon; it exits 60s after the last client disconnects.</Check>
+<Check>**Per-repo scope**: socket lives at `<git-common-dir>/betterhook/sock`, so every repo has its own daemon lifecycle.</Check>
+<Check>**Fallback-safe**: if the daemon can't start (sandboxing, permissions), the runner degrades to `fs4` flock on `<common-dir>/betterhook/locks/<key>.lock`.</Check>
+
+## Protocol
+
+Length-prefixed bincode frames over a Unix domain socket. See
+[reference/protocol](/reference/protocol) for the full wire format.
+
+```rust
+enum Request {
+    Hello { client_version: u32 },
+    Acquire { key: LockKey, timeout_ms: u64 },
+    Release { token: u64 },
+    Status,
+    Ping,
+}
+
+enum Response {
+    Hello { server_version: u32 },
+    Granted { token: u64 },
+    Timeout,
+    Released,
+    Pong,
+    Status { locks: Vec<LockStatus> },
+    Error { message: String },
+}
+```
+
+## Lifecycle
+
+<Steps>
+  <Step title="Client tries to connect">
+    The runner's lock client checks `BETTERHOOK_DAEMON_SOCK` first, then
+    falls back to `<common-dir>/betterhook/sock`.
+  </Step>
+  <Step title="If no daemon is running">
+    `fork + exec betterhook serve --socket <path>` and retry with 500 ms backoff
+    up to 3 s. If the daemon fails to come up, degrade to flock.
+  </Step>
+  <Step title="Daemon serves requests">
+    Accept loop on the Unix socket. Per-connection handler decodes frames
+    via `tokio_util::codec::LengthDelimitedCodec`, dispatches, sends the
+    response.
+  </Step>
+  <Step title="Connection drops release permits">
+    Each connection holds a `HashMap<token, HeldPermit>` where the permit
+    is `OwnedSemaphorePermit`. Dropping the map releases every permit the
+    connection held, so a crashed client never leaks locks.
+  </Step>
+  <Step title="Idle linger">
+    When the active connection count reaches zero and 60 seconds pass,
+    the daemon exits cleanly and removes its socket file.
+  </Step>
+</Steps>
+
+## Lock registry
+
+```rust
+struct Registry {
+    slots: HashMap<LockKey, Arc<tokio::sync::Semaphore>>,
+}
+```
+
+One `Semaphore` per distinct `LockKey`. First caller's `permits` value
+sets the semaphore's capacity; subsequent callers are granted in arrival
+order. The three shapes of `LockKey.name`:
+
+| Example name                     | Source                                                     |
+|---------------------------------|------------------------------------------------------------|
+| `tool:eslint`                    | `isolate = "eslint"`                                       |
+| `sharded:tsc`                    | `isolate = { name = "tsc", slots = 4 }`                    |
+| `tool-path:cargo:/repo/wt-auth`  | `isolate = { tool = "cargo", target_dir = "per-worktree" }` |
+
+## Client-side fallback
+
+If every daemon spawn attempt fails, the lock client falls back to
+`fs4::FileExt::lock_exclusive` on `<common-dir>/betterhook/locks/<key>.lock`.
+This degrades:
+
+- Sharded semaphores → plain mutex (1 permit)
+- `LockKey.permits > 1` → ignored
+- `Status` command → unsupported
+
+Mutex semantics for simple `Tool` locks remain correct.
+
+## Path length limit (macOS)
+
+macOS's Unix socket path limit is 104 characters. For deeply nested
+Conductor workspaces like `~/conductor/workspaces/.../wt-a/.git/...`, the
+default socket path can exceed that. betterhook's fallback is to use
+`/tmp/bh-<sha8>.sock` and write the chosen path into
+`<common-dir>/betterhook/sockpath` as a sentinel file the client reads.
+
+## Running manually
+
+Normally the runner spawns the daemon automatically. For debugging:
+
+```sh
+betterhook serve --socket /tmp/test.sock
+# in another shell
+BETTERHOOK_DAEMON_SOCK=/tmp/test.sock betterhook run pre-commit
+```
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="Isolation" icon="lock" href="/essentials/isolation">
+    How to declare a lock from your config.
+  </Card>
+  <Card title="Wire protocol" icon="network" href="/reference/protocol">
+    Full bincode format spec for third-party harness integration.
+  </Card>
+</CardGroup>

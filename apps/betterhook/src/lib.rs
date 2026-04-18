@@ -1,0 +1,21 @@
+//! betterhook — a memory-efficient, worktree-native git hooks manager built
+//! for the AI agent era.
+//!
+//! This crate is the implementation library. The `betterhook` CLI binary lives
+//! in the sibling `apps/cli` crate and depends on this one.
+
+pub mod builtins;
+pub mod cache;
+pub mod config;
+pub mod daemon;
+pub mod dispatch;
+pub mod error;
+#[cfg(feature = "fuzz-harnesses")]
+pub mod fuzz_harnesses;
+pub mod git;
+pub mod install;
+pub mod lock;
+pub mod runner;
+pub mod status;
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

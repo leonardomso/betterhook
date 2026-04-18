@@ -1,0 +1,63 @@
+---
+title: "Commands overview"
+description: "Every betterhook subcommand at a glance."
+icon: "terminal"
+---
+
+betterhook ships a single binary with these subcommands. Everything lives
+behind `betterhook <subcommand> --help`.
+
+<CardGroup cols={2}>
+  <Card title="init" icon="file-plus" href="/commands/init">
+    Scaffold a starter `betterhook.toml`.
+  </Card>
+  <Card title="install" icon="download" href="/commands/install">
+    Write worktree-aware hook wrappers into `.git/hooks/`.
+  </Card>
+  <Card title="uninstall" icon="trash-2" href="/commands/uninstall">
+    Remove SHA-verified wrappers. Never touches user-modified hooks.
+  </Card>
+  <Card title="run" icon="play" href="/commands/run">
+    Run a hook directly. Supports `--dry-run`, `--json`, `--skip`, `--only`.
+  </Card>
+  <Card title="status" icon="activity" href="/commands/status">
+    JSON snapshot for agent introspection.
+  </Card>
+  <Card title="explain" icon="eye" href="/commands/explain">
+    Print a job's resolved plan without executing.
+  </Card>
+  <Card title="fix" icon="wand-sparkles" href="/commands/fix">
+    Run every job's `fix = ...` variant (auto-formatter mode).
+  </Card>
+  <Card title="import" icon="arrow-right" href="/commands/import">
+    Import config from lefthook, husky, hk, or pre-commit.
+  </Card>
+  <Card title="cache" icon="database" href="/commands/cache">
+    Inspect, clear, or verify the content-addressable hook cache.
+  </Card>
+  <Card title="builtins" icon="puzzle" href="/commands/builtins">
+    List and inspect the 12 builtin linter wrappers.
+  </Card>
+  <Card title="doctor" icon="stethoscope" href="/commands/doctor">
+    Pre-flight health check for install, config, tools, and cache.
+  </Card>
+</CardGroup>
+
+## Hidden subcommand
+
+`betterhook __dispatch` is invoked by the installed wrapper script and is
+**not** meant for direct use. It's hidden from `--help`.
+
+## Global flags
+
+None yet. Every subcommand has its own flags — see the individual pages.
+
+## Exit codes
+
+betterhook has a [stable exit-code contract](/reference/exit-codes). Agents
+can rely on the meaning of `0 / 1 / 2 / 3 / 4 / 5 / 64 / 124 / 130` across
+releases.
+
+## Environment variables
+
+See [reference/env-vars](/reference/env-vars) for the full list.

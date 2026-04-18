@@ -1,0 +1,14 @@
+{
+  "name": "@betterhook/docs",
+  "version": "0.0.2",
+  "private": true,
+  "description": "Mintlify documentation for betterhook",
+  "scripts": {
+    "dev": "mint dev",
+    "check": "mint broken-links",
+    "update": "mint update"
+  },
+  "devDependencies": {
+    "mint": "^4.2.507"
+  }
+}

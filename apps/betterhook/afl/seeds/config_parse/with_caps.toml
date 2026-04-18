@@ -1,0 +1,16 @@
+[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+
+[hooks.pre-commit.jobs.lint]
+run = "eslint --cache {staged_files}"
+glob = ["*.ts"]
+reads = ["**/*.ts"]
+writes = []
+concurrent_safe = true
+
+[hooks.pre-commit.jobs.fmt]
+run = "prettier --write {files}"
+writes = ["**/*.ts"]

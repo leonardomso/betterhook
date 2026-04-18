@@ -1,0 +1,27 @@
+[package]
+name = "betterhook-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The betterhook CLI."
+
+[[bin]]
+name = "betterhook"
+path = "src/main.rs"
+
+[dependencies]
+betterhook = { path = "../betterhook" }
+clap = { workspace = true }
+tokio = { workspace = true }
+miette = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tracing-subscriber = { workspace = true }
+which = { workspace = true }
+
+[lints]
+workspace = true

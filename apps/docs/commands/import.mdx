@@ -1,0 +1,64 @@
+---
+title: "betterhook import"
+description: "Convert another hook manager's config into a betterhook.toml."
+icon: "file-import"
+---
+
+```sh
+betterhook import [--from <path>] [--from-format <source>] [--to <path>] [--notes <path>] [--force]
+```
+
+Converts a config from another git hook manager into `betterhook.toml`
+plus a `BETTERHOOK_MIGRATION_NOTES.md` that lists everything the
+importer changed or dropped during the conversion.
+
+## Supported sources
+
+| Source | Auto-detected file |
+|---|---|
+| `lefthook` | `lefthook.yml`, `lefthook.yaml` |
+| `husky` | `.husky/<hook-name>` (shell script) |
+| `hk` | `hk.toml` |
+| `pre-commit` | `.pre-commit-config.yaml` |
+
+If `--from` is omitted, betterhook probes the current directory for
+these files in order and picks the first one found.
+
+## Flags
+
+<ParamField path="--from" type="path">
+  Path to the source config file. If omitted, betterhook auto-detects.
+</ParamField>
+<ParamField path="--from-format" type="string">
+  Source format: `lefthook`, `husky`, `hk`, or `pre-commit`. If omitted,
+  inferred from the filename.
+</ParamField>
+<ParamField path="--to" type="path" default="betterhook.toml">
+  Where to write the converted config.
+</ParamField>
+<ParamField path="--notes" type="path" default="BETTERHOOK_MIGRATION_NOTES.md">
+  Where to write the human-readable migration notes.
+</ParamField>
+<ParamField path="--force" type="boolean">
+  Overwrite existing output files.
+</ParamField>
+
+## Example
+
+```sh
+$ betterhook import --from lefthook.yml
+wrote betterhook.toml
+wrote BETTERHOOK_MIGRATION_NOTES.md
+```
+
+The notes file documents:
+- Top-level keys that were skipped (`extends`, `remotes`, `templates`)
+- Non-string `skip`/`only` values that were dropped
+- Any job that had no `run` value (the importer inserts `true`)
+- A reminder to add capability fields (`reads`, `writes`, `concurrent_safe`)
+
+## Migrating from `betterhook migrate`
+
+The `migrate` subcommand is a hidden alias that defaults to
+`--from-format lefthook`. It will be removed in a future release. Use
+`betterhook import` instead.

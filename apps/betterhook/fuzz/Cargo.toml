@@ -1,0 +1,30 @@
+[package]
+name = "betterhook-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.11"
+betterhook = { path = ".." }
+
+# Fuzz targets must each declare a `[[bin]]` entry.
+[[bin]]
+name = "config_parse"
+path = "fuzz_targets/config_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "wrapper_paths"
+path = "fuzz_targets/wrapper_paths.rs"
+test = false
+doc = false
+
+# The fuzz crate is intentionally excluded from the workspace so
+# `cargo build --workspace` doesn't try to build it without
+# cargo-fuzz's nightly instrumentation.
+[workspace]

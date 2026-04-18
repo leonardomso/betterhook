@@ -1,0 +1,54 @@
+---
+title: "betterhook uninstall"
+description: "Remove SHA-verified wrappers. User-modified hooks are never touched."
+icon: "trash-2"
+---
+
+```sh
+betterhook uninstall
+```
+
+Reads `<git-common-dir>/betterhook/installed.json` and removes every wrapper
+whose SHA-256 matches what betterhook originally wrote. User-edited hooks are
+preserved and reported to stderr.
+
+## Safety guarantees
+
+<Check>**Only removes content-verified wrappers.** If you hand-edited a hook file after install, the SHA no longer matches and betterhook leaves it alone.</Check>
+<Check>**Restores the previous `core.hooksPath`** if `install --takeover` stashed one in the manifest.</Check>
+<Check>**Removes the manifest last**, so a crash mid-uninstall leaves the remaining wrappers recoverable.</Check>
+
+## Example
+
+```sh
+$ betterhook uninstall
+removed 2 wrappers
+  pre-commit
+  pre-push
+
+$ betterhook uninstall
+Error: no betterhook install found in /Users/you/repo/.git: no installed.json
+```
+
+## Edge cases
+
+<AccordionGroup>
+  <Accordion title="User-modified hook" icon="pencil">
+    ```sh
+    $ betterhook uninstall
+    removed 0 wrappers
+    skipped 1 hooks:
+      pre-commit: hook was modified after install — leaving in place
+    ```
+
+    The SHA check failed. Delete the file manually if you really want it gone.
+  </Accordion>
+  <Accordion title="Another worktree still has a config" icon="alert-triangle">
+    betterhook will print a warning and list the worktrees that still have a
+    `betterhook.*` file. Pass `--force` (planned) to override.
+  </Accordion>
+  <Accordion title="Manifest missing" icon="circle-x">
+    If the manifest was hand-deleted, `uninstall` exits with the
+    `InstallError::NotInstalled` variant. Delete the wrapper files manually.
+  </Accordion>
+</AccordionGroup>

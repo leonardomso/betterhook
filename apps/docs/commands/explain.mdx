@@ -1,0 +1,94 @@
+---
+title: "betterhook explain"
+description: "Print a job's fully resolved plan (command, files, env, lock) without executing."
+icon: "eye"
+---
+
+```sh
+betterhook explain --hook <name> [--job <name>] [--worktree <path>] [--format json|dot|svg]
+```
+
+Returns a JSON snapshot of every resolved job in the named hook: the exact
+`run` command, `fix` command, glob/exclude patterns, env vars, timeout,
+isolate key, priority, and `stage_fixed`/`interactive` flags — without
+actually running anything.
+
+Use it to answer "what *would* happen if I committed right now?" without
+making a commit.
+
+## Flags
+
+<ParamField path="--hook" type="string" required>
+  The hook name to explain (e.g. `pre-commit`).
+</ParamField>
+<ParamField path="--job" type="string">
+  Restrict the output to a single job name. Without this, every job in the hook is listed.
+</ParamField>
+<ParamField path="--worktree" type="path" default=".">
+  Which worktree root to inspect.
+</ParamField>
+<ParamField path="--format" type="string" default="json">
+  Output format. `json` (default) prints the full resolved plan. `dot`
+  emits a standalone [graphviz](https://graphviz.org/) digraph of the
+  capability DAG. `svg` pipes the digraph through `dot -Tsvg` (requires
+  graphviz on PATH).
+</ParamField>
+
+## Visualizing the DAG
+
+```sh
+# Save as a .dot file
+betterhook explain --hook pre-commit --format dot > dag.dot
+
+# Render directly to PNG (requires graphviz)
+betterhook explain --hook pre-commit --format dot | dot -Tpng -o dag.png
+
+# Or let betterhook call dot for you
+betterhook explain --hook pre-commit --format svg > dag.svg
+```
+
+## Example (JSON)
+
+```sh
+$ betterhook explain --hook pre-commit --job lint
+{
+  "config_path": "/repo/betterhook.toml",
+  "hook": {
+    "name": "pre-commit",
+    "parallel": true,
+    "fail_fast": false,
+    "stash_untracked": true
+  },
+  "jobs": [
+    {
+      "name": "lint",
+      "run": "eslint --cache --fix {staged_files}",
+      "fix": null,
+      "glob": ["*.ts", "*.tsx"],
+      "exclude": ["**/*.gen.ts"],
+      "env": { "NODE_OPTIONS": "--max-old-space-size=2048" },
+      "timeout": "60000ms",
+      "stage_fixed": true,
+      "interactive": false,
+      "priority": 1,
+      "isolate": { "type": "tool", "name": "eslint" }
+    }
+  ]
+}
+```
+
+## Difference from `run --dry-run`
+
+- **`run --dry-run`** resolves the job graph and prints a flat list of job
+  names that would execute in order.
+- **`explain`** prints the full resolved plan for each job — the command, the
+  files it would see, the env vars, the lock it would acquire.
+
+Both produce JSON; `explain` is the deeper one.
+
+## Why agents care
+
+An agent that's about to suggest changes to a file can call `explain` first,
+check the resolved glob, and skip changes to files that wouldn't be linted
+anyway. Or flag that a change will trigger a slow typecheck and warn the
+user before proceeding.

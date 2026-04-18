@@ -1,0 +1,107 @@
+---
+title: "Exit codes"
+description: "The stable exit-code contract every betterhook subcommand honors."
+icon: "list-checks"
+---
+
+betterhook guarantees these exit codes across releases. Agents can rely
+on their meanings. The contract is **additive only** — new codes may be
+added, but existing codes never change meaning.
+
+## Codes
+
+| Code | Name            | Meaning                                                       |
+|-----:|-----------------|---------------------------------------------------------------|
+|  `0` | `OK`            | All jobs completed successfully                               |
+|  `1` | `HOOK_FAILED`   | At least one job returned a non-zero exit code                |
+|  `2` | `CONFIG_ERROR`  | Config parse or schema error                                  |
+|  `3` | `LOCK_TIMEOUT`  | Coordinator lock acquisition timed out                        |
+|  `4` | `GIT_ERROR`     | Unexpected git failure (e.g. stash pop conflict)              |
+|  `5` | `INSTALL_ERROR` | Install/uninstall error                                       |
+| `64` | `USAGE_ERROR`   | Invalid CLI usage (from clap) — matches `sysexits.h`          |
+|`124` | `JOB_TIMEOUT`   | A per-job timeout expired — matches GNU `timeout(1)`          |
+|`130` | `INTERRUPTED`   | SIGINT received                                               |
+
+## How each code is produced
+
+<AccordionGroup>
+  <Accordion title="0 — OK" icon="check">
+    Every job in the hook ran and returned 0. Commits proceed.
+  </Accordion>
+  <Accordion title="1 — HOOK_FAILED" icon="x">
+    At least one job's subprocess returned non-zero. The runner already
+    printed the failing job's stderr. `fail_fast` controls whether
+    subsequent jobs also ran.
+  </Accordion>
+  <Accordion title="2 — CONFIG_ERROR" icon="file-warning">
+    One of:
+    - `betterhook.*` could not be parsed (invalid TOML/YAML/JSON)
+    - Schema validation failed (missing `run`, unknown field, bad duration, etc.)
+    - `extends` resolution failed (missing file, circular reference)
+
+    The error is rendered with miette, including the file/line/column span.
+  </Accordion>
+  <Accordion title="3 — LOCK_TIMEOUT" icon="clock">
+    A job declared `isolate` and the coordinator couldn't grant the permit
+    within the job's `timeout`. The client already reported the waited
+    duration on stderr.
+  </Accordion>
+  <Accordion title="4 — GIT_ERROR" icon="git-branch">
+    Something went wrong with a git subprocess. The most common case is a
+    stash pop conflict — betterhook prints the stash ref so you can
+    recover manually.
+  </Accordion>
+  <Accordion title="5 — INSTALL_ERROR" icon="download">
+    `betterhook install` or `betterhook uninstall` hit an I/O error,
+    encountered a foreign `core.hooksPath` without `--takeover`, or failed
+    to write the manifest.
+  </Accordion>
+  <Accordion title="64 — USAGE_ERROR" icon="circle-help">
+    clap rejected the CLI invocation (missing required arg, invalid flag
+    value, etc.). Matches the BSD `sysexits.h` convention.
+  </Accordion>
+  <Accordion title="124 — JOB_TIMEOUT" icon="timer">
+    A job's per-job `timeout` expired. The child was SIGKILLed. Matches
+    GNU `timeout(1)` so tools built for that convention Just Work.
+  </Accordion>
+  <Accordion title="130 — INTERRUPTED" icon="square">
+    SIGINT received (Ctrl-C). The runner aborts every in-flight job via
+    the shared cancel token and reports 130.
+  </Accordion>
+</AccordionGroup>
+
+## Using from shell
+
+```sh
+betterhook run pre-commit
+case $? in
+  0)   echo "all good" ;;
+  1)   echo "hook failed — see stderr for details" ;;
+  2)   echo "config error — fix betterhook.toml" ;;
+  124) echo "a job timed out" ;;
+  *)   echo "unexpected exit $?" ;;
+esac
+```
+
+## Using from jq + NDJSON
+
+If you prefer the structured output, every run ends with a `summary`
+event:
+
+```sh
+betterhook run pre-commit --json | jq -r 'select(.kind == "summary") | .ok'
+# "true" or "false"
+```
+
+`summary.ok == false` always pairs with a process exit code of `1`
+(HOOK_FAILED). For deeper detail, grep for `kind == "job_finished"` and
+check each job's `exit`.
+
+## Notes on platform conventions
+
+- `124` matches GNU `timeout(1)` — same semantics, same number.
+- `130` is SIGINT by convention (128 + SIGINT number 2).
+- `64` is from `/usr/include/sysexits.h` — standard BSD usage-error code.
+
+These aren't accidents. Agents and CI tooling built for those conventions
+already know how to interpret them.
