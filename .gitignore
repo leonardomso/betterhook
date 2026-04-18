@@ -38,6 +38,9 @@ apps/betterhook/fuzz/coverage/
 # Mintlify local cache
 apps/docs/.mintlify/
 
+# Superpowers specs (local-only, never commit)
+docs/superpowers/
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
