@@ -535,6 +535,7 @@ async fn run_command_extra_env_overrides_env() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn run_command_scrubs_inherited_git_dir() {
     let _guard = ENV_LOCK.lock().unwrap();
     unsafe {
@@ -554,10 +555,14 @@ async fn run_command_scrubs_inherited_git_dir() {
             OutputEvent::Line { line, .. } if line == "unset"
         )
     });
-    assert!(scrubbed, "inherited GIT_DIR should be scrubbed from the child");
+    assert!(
+        scrubbed,
+        "inherited GIT_DIR should be scrubbed from the child"
+    );
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn run_command_explicit_env_can_reintroduce_git_dir() {
     let _guard = ENV_LOCK.lock().unwrap();
     unsafe {
@@ -596,7 +601,10 @@ async fn run_command_explicit_env_can_reintroduce_git_dir() {
             OutputEvent::Line { line, .. } if line == "/tmp/explicit-git-dir"
         )
     });
-    assert!(explicit, "explicit env should still win after git env scrubbing");
+    assert!(
+        explicit,
+        "explicit env should still win after git env scrubbing"
+    );
 }
 
 #[tokio::test]

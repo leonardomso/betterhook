@@ -187,6 +187,7 @@ pub struct Meta {
     pub min_betterhook: Option<semver::VersionReq>,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hook {
     pub name: String,

@@ -242,9 +242,7 @@ async fn acquire_repo_stash_lock(common_dir: &Path) -> RunResult<crate::lock::Fi
         .await
         .map_err(|source| RunError::Io {
             path: lock_dir.clone(),
-            source: std::io::Error::other(format!(
-                "repo-stash lock task failed: {source}"
-            )),
+            source: std::io::Error::other(format!("repo-stash lock task failed: {source}")),
         })?
         .map_err(|source| RunError::Io {
             path: lock_dir,

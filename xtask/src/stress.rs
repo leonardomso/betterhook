@@ -118,10 +118,7 @@ edition = "2024"
 "#,
     )?;
     std::fs::create_dir_all(dir.join("src"))?;
-    std::fs::write(
-        dir.join("src/lib.rs"),
-        "pub fn one() -> i32 {\n    1\n}\n",
-    )?;
+    std::fs::write(dir.join("src/lib.rs"), "pub fn one() -> i32 {\n    1\n}\n")?;
 
     std::fs::write(dir.join("betterhook.toml"), stress_config(marker_dir))?;
 

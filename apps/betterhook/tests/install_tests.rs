@@ -10,8 +10,8 @@ use std::process::Command;
 
 use betterhook::dispatch::{Dispatch, resolve};
 use betterhook::git::git_common_dir;
-use betterhook::install::{InstallOptions, install, uninstall};
 use betterhook::install::render_wrapper;
+use betterhook::install::{InstallOptions, install, uninstall};
 
 use common::{git, init_repo, new_repo_with_worktrees, write_config};
 
