@@ -21,10 +21,16 @@ pub fn render_wrapper(betterhook_bin: &str) -> String {
 set -e
 hook_name=\"$(basename \"$0\")\"
 worktree_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\" || exit 0
+if [ -n \"${{GIT_DIR:-}}\" ]; then
+  exec \"{betterhook_bin}\" __dispatch \\
+    --hook \"$hook_name\" \\
+    --worktree \"$worktree_root\" \\
+    --git-dir \"$GIT_DIR\" \\
+    -- \"$@\"
+fi
 exec \"{betterhook_bin}\" __dispatch \\
   --hook \"$hook_name\" \\
   --worktree \"$worktree_root\" \\
-  --git-dir \"${{GIT_DIR:-}}\" \\
   -- \"$@\"
 "
     )
@@ -53,6 +59,7 @@ mod tests {
         assert!(w.starts_with("#!/usr/bin/env sh"));
         assert!(w.contains("rev-parse --show-toplevel"));
         assert!(w.contains("__dispatch"));
+        assert!(w.contains("if [ -n \"${GIT_DIR:-}\" ]; then"));
         assert!(w.contains("/usr/local/bin/betterhook"));
         assert!(w.contains("$@"));
     }
