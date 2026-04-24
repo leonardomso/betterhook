@@ -19,6 +19,13 @@ use std::time::{Duration, Instant};
 const WORKTREE_COUNT: usize = 8;
 
 pub fn run(_args: &[String]) -> ExitCode {
+    let betterhook = match ensure_betterhook_binary() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("xtask stress: failed to prepare betterhook binary: {e}");
+            return ExitCode::from(1);
+        }
+    };
     let tmp = match make_root() {
         Ok(t) => t,
         Err(e) => {
@@ -29,7 +36,8 @@ pub fn run(_args: &[String]) -> ExitCode {
     eprintln!("xtask stress: scratch dir at {}", tmp.display());
 
     let primary = tmp.join("primary");
-    if let Err(e) = init_primary(&primary) {
+    let marker_dir = tmp.join("markers");
+    if let Err(e) = init_primary(&primary, &betterhook, &marker_dir) {
         eprintln!("xtask stress: init_primary failed: {e}");
         return ExitCode::from(1);
     }
@@ -45,7 +53,8 @@ pub fn run(_args: &[String]) -> ExitCode {
     let start = Instant::now();
     let mut handles = Vec::with_capacity(worktrees.len());
     for (idx, wt) in worktrees.iter().cloned().enumerate() {
-        handles.push(thread::spawn(move || run_worktree(&wt, idx)));
+        let markers = marker_dir.clone();
+        handles.push(thread::spawn(move || run_worktree(&wt, idx, &markers)));
     }
 
     let mut failures = 0usize;
@@ -72,6 +81,10 @@ pub fn run(_args: &[String]) -> ExitCode {
         eprintln!("xtask stress: {failures} worktree(s) failed");
         return ExitCode::from(1);
     }
+    if let Err(e) = verify_markers(&worktrees, &marker_dir) {
+        eprintln!("xtask stress: hook verification failed: {e}");
+        return ExitCode::from(1);
+    }
     if elapsed > Duration::from_secs(60) {
         eprintln!("xtask stress: WARN — exceeded 60s soft budget");
     }
@@ -87,8 +100,9 @@ fn make_root() -> std::io::Result<PathBuf> {
     Ok(base)
 }
 
-fn init_primary(dir: &Path) -> std::io::Result<()> {
+fn init_primary(dir: &Path, betterhook: &Path, marker_dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
+    std::fs::create_dir_all(marker_dir)?;
     sh(dir, &["git", "init", "-q"])?;
     sh(dir, &["git", "config", "user.email", "stress@betterhook"])?;
     sh(dir, &["git", "config", "user.name", "stress"])?;
@@ -104,21 +118,27 @@ edition = "2024"
 "#,
     )?;
     std::fs::create_dir_all(dir.join("src"))?;
-    std::fs::write(dir.join("src/lib.rs"), "pub fn one() -> i32 { 1 }\n")?;
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn one() -> i32 {\n    1\n}\n",
+    )?;
 
-    let cfg = r#"[meta]
-version = 1
-
-[hooks.pre-commit.jobs.fmt]
-run = "cargo fmt --all -- --check"
-glob = ["*.rs"]
-concurrent_safe = true
-isolate = "cargo"
-"#;
-    std::fs::write(dir.join("betterhook.toml"), cfg)?;
+    std::fs::write(dir.join("betterhook.toml"), stress_config(marker_dir))?;
 
     sh(dir, &["git", "add", "-A"])?;
     sh(dir, &["git", "commit", "-q", "-m", "init"])?;
+    let status = Command::new(betterhook)
+        .args(["install", "--no-unit"])
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .status()?;
+    if !status.success() {
+        return Err(std::io::Error::other(format!(
+            "betterhook install failed with {status}"
+        )));
+    }
     Ok(())
 }
 
@@ -145,13 +165,90 @@ fn attach_worktrees(primary: &Path, count: usize) -> std::io::Result<Vec<PathBuf
     Ok(out)
 }
 
-fn run_worktree(dir: &Path, idx: usize) -> std::io::Result<()> {
+fn run_worktree(dir: &Path, idx: usize, marker_dir: &Path) -> std::io::Result<()> {
     // Drop a trivially correct .rs file (cargo fmt --check should pass).
     let file = dir.join(format!("src/wt_{idx:02}.rs"));
     std::fs::write(&file, format!("pub fn id_{idx}() -> usize {{ {idx} }}\n"))?;
     sh(dir, &["git", "add", "-A"])?;
     sh(dir, &["git", "commit", "-q", "-m", &format!("wt {idx}")])?;
+    let marker = marker_file(marker_dir, dir)?;
+    if !marker.is_file() {
+        return Err(std::io::Error::other(format!(
+            "expected hook marker at {}",
+            marker.display()
+        )));
+    }
     Ok(())
+}
+
+fn verify_markers(worktrees: &[PathBuf], marker_dir: &Path) -> std::io::Result<()> {
+    for wt in worktrees {
+        let marker = marker_file(marker_dir, wt)?;
+        if !marker.is_file() {
+            return Err(std::io::Error::other(format!(
+                "missing hook marker for {}",
+                wt.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn marker_file(marker_dir: &Path, worktree: &Path) -> std::io::Result<PathBuf> {
+    let Some(name) = worktree.file_name() else {
+        return Err(std::io::Error::other(format!(
+            "worktree {} has no basename",
+            worktree.display()
+        )));
+    };
+    Ok(marker_dir.join(format!("{}.ran", name.to_string_lossy())))
+}
+
+fn stress_config(marker_dir: &Path) -> String {
+    format!(
+        r#"[meta]
+version = 1
+
+[hooks.pre-commit.jobs.fmt]
+run = "sh -c 'cargo fmt --all -- --check && touch \"$MARKER_DIR/$(basename \"$PWD\").ran\"'"
+glob = ["*.rs"]
+concurrent_safe = true
+isolate = "cargo"
+env = {{ MARKER_DIR = "{}" }}
+"#,
+        marker_dir.display()
+    )
+}
+
+fn ensure_betterhook_binary() -> std::io::Result<PathBuf> {
+    let root = workspace_root();
+    let status = Command::new("cargo")
+        .args(["build", "-q", "-p", "betterhook-cli"])
+        .current_dir(&root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .status()?;
+    if !status.success() {
+        return Err(std::io::Error::other(format!(
+            "cargo build -p betterhook-cli failed with {status}"
+        )));
+    }
+    let bin = root.join("target").join("debug").join("betterhook");
+    if !bin.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("missing betterhook binary at {}", bin.display()),
+        ));
+    }
+    Ok(bin)
+}
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask manifest lives under the workspace root")
+        .to_path_buf()
 }
 
 fn sh(dir: &Path, argv: &[&str]) -> std::io::Result<()> {
@@ -168,4 +265,23 @@ fn sh(dir: &Path, argv: &[&str]) -> std::io::Result<()> {
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marker_file_uses_worktree_basename() {
+        let marker = marker_file(Path::new("/tmp/markers"), Path::new("/tmp/wt-3")).unwrap();
+        assert_eq!(marker, PathBuf::from("/tmp/markers/wt-3.ran"));
+    }
+
+    #[test]
+    fn stress_config_keeps_cargo_and_marker_command() {
+        let cfg = stress_config(Path::new("/tmp/markers"));
+        assert!(cfg.contains("cargo fmt --all -- --check"));
+        assert!(cfg.contains("MARKER_DIR = \"/tmp/markers\""));
+        assert!(cfg.contains("touch \\\"$MARKER_DIR/$(basename \\\"$PWD\\\").ran\\\""));
+    }
 }

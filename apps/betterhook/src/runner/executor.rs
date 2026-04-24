@@ -134,6 +134,14 @@ pub async fn run_hook_with_options(
     // Single per-hook lock covering every git index mutation (stash,
     // add, unstash). Parallel jobs share it.
     let git_lock: GitIndexLock = Arc::new(Mutex::new(()));
+    // `git stash` mutates repo-global state shared by every linked
+    // worktree, so hold a cross-worktree advisory lock for the full
+    // push→run→pop lifecycle.
+    let _stash_lock = if hook.stash_untracked {
+        Some(acquire_repo_stash_lock(&common_dir).await?)
+    } else {
+        None
+    };
 
     // Push an untracked+unstaged stash before the first job so formatters
     // don't see files that aren't about to be committed (lefthook #833).
@@ -225,6 +233,23 @@ struct RunSummary {
     ok: bool,
     jobs_run: usize,
     jobs_skipped: usize,
+}
+
+async fn acquire_repo_stash_lock(common_dir: &Path) -> RunResult<crate::lock::FileLock> {
+    let common_dir = common_dir.to_path_buf();
+    let lock_dir = common_dir.join("betterhook").join("locks");
+    tokio::task::spawn_blocking(move || crate::lock::FileLock::acquire(&common_dir, "repo-stash"))
+        .await
+        .map_err(|source| RunError::Io {
+            path: lock_dir.clone(),
+            source: std::io::Error::other(format!(
+                "repo-stash lock task failed: {source}"
+            )),
+        })?
+        .map_err(|source| RunError::Io {
+            path: lock_dir,
+            source,
+        })
 }
 
 /// Per-hook execution state shared across the sequential and parallel
