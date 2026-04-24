@@ -43,9 +43,12 @@ fn mk_hook(name: &str, jobs: Vec<Job>) -> Hook {
     Hook {
         name: name.to_owned(),
         parallel: false,
+        parallel_explicit: false,
         fail_fast: false,
+        fail_fast_explicit: false,
         parallel_limit: None,
         stash_untracked: false,
+        stash_untracked_explicit: false,
         jobs,
     }
 }

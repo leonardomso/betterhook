@@ -11,9 +11,12 @@ Config {
         "pre-commit": Hook {
             name: "pre-commit",
             parallel: true,
+            parallel_explicit: true,
             fail_fast: false,
+            fail_fast_explicit: false,
             parallel_limit: None,
             stash_untracked: true,
+            stash_untracked_explicit: false,
             jobs: [
                 Job {
                     name: "lint",

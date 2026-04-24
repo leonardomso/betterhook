@@ -216,10 +216,25 @@ fn merge_hooks(base: &Hook, overlay: &Hook) -> Hook {
     jobs.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.name.cmp(&b.name)));
     Hook {
         name: base.name.clone(),
-        parallel: overlay.parallel || base.parallel,
-        fail_fast: overlay.fail_fast || base.fail_fast,
+        parallel: if overlay.parallel_explicit {
+            overlay.parallel
+        } else {
+            base.parallel
+        },
+        parallel_explicit: base.parallel_explicit || overlay.parallel_explicit,
+        fail_fast: if overlay.fail_fast_explicit {
+            overlay.fail_fast
+        } else {
+            base.fail_fast
+        },
+        fail_fast_explicit: base.fail_fast_explicit || overlay.fail_fast_explicit,
         parallel_limit: overlay.parallel_limit.or(base.parallel_limit),
-        stash_untracked: overlay.stash_untracked,
+        stash_untracked: if overlay.stash_untracked_explicit {
+            overlay.stash_untracked
+        } else {
+            base.stash_untracked
+        },
+        stash_untracked_explicit: base.stash_untracked_explicit || overlay.stash_untracked_explicit,
         jobs,
     }
 }
@@ -261,9 +276,12 @@ mod hook_merge_tests {
         Hook {
             name: name.to_owned(),
             parallel: false,
+            parallel_explicit: false,
             fail_fast: false,
+            fail_fast_explicit: false,
             parallel_limit: None,
             stash_untracked: false,
+            stash_untracked_explicit: false,
             jobs,
         }
     }
@@ -348,6 +366,63 @@ mod hook_merge_tests {
         let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
         assert_eq!(merged.jobs.len(), 1);
         assert_eq!(merged.jobs[0].name, "scoped");
+    }
+
+    #[test]
+    fn package_hook_can_explicitly_disable_root_flags() {
+        let mut root = mk_hook("pre-commit", vec![mk_job("lint", 0)]);
+        root.parallel = true;
+        root.parallel_explicit = true;
+        root.fail_fast = true;
+        root.fail_fast_explicit = true;
+        root.stash_untracked = true;
+        root.stash_untracked_explicit = true;
+
+        let mut pkg_hook = mk_hook("pre-commit", vec![mk_job("pkg-lint", 0)]);
+        pkg_hook.parallel_explicit = true;
+        pkg_hook.fail_fast_explicit = true;
+        pkg_hook.stash_untracked = false;
+        pkg_hook.stash_untracked_explicit = true;
+
+        let config = mk_config(
+            vec![root],
+            vec![("frontend".to_owned(), "apps/web", vec![pkg_hook])],
+        );
+        let match_ = PackageMatch::Package(
+            config.packages.get("frontend").unwrap(),
+            vec![PathBuf::from("apps/web/a.ts")],
+        );
+        let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
+
+        assert!(!merged.parallel);
+        assert!(!merged.fail_fast);
+        assert!(!merged.stash_untracked);
+    }
+
+    #[test]
+    fn omitted_package_flags_preserve_root_flags() {
+        let mut root = mk_hook("pre-commit", vec![mk_job("lint", 0)]);
+        root.parallel = true;
+        root.parallel_explicit = true;
+        root.fail_fast = true;
+        root.fail_fast_explicit = true;
+        root.stash_untracked = false;
+        root.stash_untracked_explicit = true;
+
+        let pkg_hook = mk_hook("pre-commit", vec![mk_job("pkg-lint", 0)]);
+        let config = mk_config(
+            vec![root],
+            vec![("frontend".to_owned(), "apps/web", vec![pkg_hook])],
+        );
+        let match_ = PackageMatch::Package(
+            config.packages.get("frontend").unwrap(),
+            vec![PathBuf::from("apps/web/a.ts")],
+        );
+        let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
+
+        assert!(merged.parallel);
+        assert!(merged.fail_fast);
+        assert!(!merged.stash_untracked);
     }
 }
 

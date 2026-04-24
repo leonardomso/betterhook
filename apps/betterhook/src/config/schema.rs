@@ -191,9 +191,12 @@ pub struct Meta {
 pub struct Hook {
     pub name: String,
     pub parallel: bool,
+    pub parallel_explicit: bool,
     pub fail_fast: bool,
+    pub fail_fast_explicit: bool,
     pub parallel_limit: Option<usize>,
     pub stash_untracked: bool,
+    pub stash_untracked_explicit: bool,
     /// Jobs in priority order (index 0 runs first when contending).
     pub jobs: Vec<Job>,
 }
@@ -354,9 +357,12 @@ fn lower_hook(name: &str, raw: RawHook) -> ConfigResult<Hook> {
     Ok(Hook {
         name: name.to_owned(),
         parallel,
+        parallel_explicit: raw.parallel.is_some(),
         fail_fast,
+        fail_fast_explicit: raw.fail_fast.is_some(),
         parallel_limit: raw.parallel_limit,
         stash_untracked,
+        stash_untracked_explicit: raw.stash_untracked.is_some(),
         jobs,
     })
 }
