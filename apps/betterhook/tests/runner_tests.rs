@@ -2,11 +2,14 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use betterhook::runner::output::{DiagnosticSeverity, OutputEvent, SinkKind, Stream};
 use betterhook::runner::proc::{Cancel, EXIT_CANCELLED, EXIT_TIMEOUT, run_command};
 use tokio::sync::mpsc;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -529,6 +532,71 @@ async fn run_command_extra_env_overrides_env() {
         )
     });
     assert!(has_extra, "extra_env should override env for the same key");
+}
+
+#[tokio::test]
+async fn run_command_scrubs_inherited_git_dir() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    unsafe {
+        std::env::set_var("GIT_DIR", "/tmp/betterhook-hook-env");
+    }
+
+    let (exit, events) = collect_events("printf '%s' \"${GIT_DIR:-unset}\"", None, None).await;
+
+    unsafe {
+        std::env::remove_var("GIT_DIR");
+    }
+
+    assert_eq!(exit, 0);
+    let scrubbed = events.iter().any(|e| {
+        matches!(
+            e,
+            OutputEvent::Line { line, .. } if line == "unset"
+        )
+    });
+    assert!(scrubbed, "inherited GIT_DIR should be scrubbed from the child");
+}
+
+#[tokio::test]
+async fn run_command_explicit_env_can_reintroduce_git_dir() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    unsafe {
+        std::env::set_var("GIT_DIR", "/tmp/betterhook-hook-env");
+    }
+
+    let (tx, mut rx) = mpsc::channel(256);
+    let mut env = BTreeMap::new();
+    env.insert("GIT_DIR".to_owned(), "/tmp/explicit-git-dir".to_owned());
+    let exit = run_command(
+        "git-dir-explicit",
+        "printf '%s' \"$GIT_DIR\"",
+        Path::new("/tmp"),
+        &env,
+        &[],
+        None,
+        None,
+        &tx,
+    )
+    .await
+    .unwrap();
+    drop(tx);
+
+    unsafe {
+        std::env::remove_var("GIT_DIR");
+    }
+
+    assert_eq!(exit, 0);
+    let mut events = Vec::new();
+    while let Some(e) = rx.recv().await {
+        events.push(e);
+    }
+    let explicit = events.iter().any(|e| {
+        matches!(
+            e,
+            OutputEvent::Line { line, .. } if line == "/tmp/explicit-git-dir"
+        )
+    });
+    assert!(explicit, "explicit env should still win after git env scrubbing");
 }
 
 #[tokio::test]
