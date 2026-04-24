@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::rev_parse::{GitError, GitResult, run_git};
+use super::{staged_files, unstaged_files};
 
 /// A live stash entry. `pop` must be called explicitly — there is no
 /// Drop-based cleanup because tokio can't await in Drop and we don't
@@ -39,6 +40,13 @@ impl StashGuard {
                 message: String::new(),
                 created: false,
             });
+        }
+        if has_partially_staged_tracked_files(worktree).await? {
+            return Err(GitError::Porcelain(
+                "stash_untracked cannot safely run with partially staged tracked files; \
+                 commit or unstage the extra edits first"
+                    .to_owned(),
+            ));
         }
 
         let message = unique_message();
@@ -119,6 +127,17 @@ async fn has_dirty_or_untracked(worktree: &Path) -> GitResult<bool> {
     Ok(!out.is_empty())
 }
 
+async fn has_partially_staged_tracked_files(worktree: &Path) -> GitResult<bool> {
+    let staged: std::collections::HashSet<PathBuf> =
+        staged_files(worktree).await?.into_iter().collect();
+    if staged.is_empty() {
+        return Ok(false);
+    }
+    let unstaged: std::collections::HashSet<PathBuf> =
+        unstaged_files(worktree).await?.into_iter().collect();
+    Ok(staged.iter().any(|path| unstaged.contains(path)))
+}
+
 async fn find_stash_index(worktree: &Path, needle: &str) -> GitResult<Option<usize>> {
     let out = run_git(worktree, ["stash", "list"]).await?;
     let text = String::from_utf8_lossy(&out);
@@ -188,16 +207,22 @@ mod tests {
         );
     }
 
-    // NOTE on the unstaged-under-staged case:
-    //
-    // If a file is both staged AND has a further unstaged modification,
-    // `git stash push --keep-index --include-untracked` captures the
-    // unstaged delta fine, but `git stash pop` three-way merges it
-    // back over a worktree that's now sitting at the staged content —
-    // git reports that as a conflict because the stash's base was the
-    // "unstaged" version. The v0.1 scope here is limited to the
-    // untracked-file case (lefthook #833), which is the realistic
-    // workload. A future phase will switch to a patch-based approach
-    // (`git diff --binary > patch`, `git checkout -- .`, run,
-    // `git apply patch`) to cover the full matrix.
+    #[tokio::test]
+    async fn partially_staged_tracked_file_is_rejected() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "staged\n").unwrap();
+        StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        std::fs::write(root.join("a.ts"), "unstaged\n").unwrap();
+
+        let err = StashGuard::push(&root).await.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("partially staged"),
+            "expected partial-stage refusal, got: {msg}"
+        );
+    }
 }

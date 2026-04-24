@@ -181,6 +181,7 @@ pub async fn run_hook_with_options(
 
     // Always try to pop the stash, even on error. A stash-pop failure
     // is reported to stderr but does not override the primary error.
+    let mut stash_restore_err = None;
     if let Some(guard) = stash {
         let _guard = git_lock.lock().await;
         if let Err(e) = guard.pop().await {
@@ -188,10 +189,14 @@ pub async fn run_hook_with_options(
             eprintln!(
                 "betterhook: your stash is still in `git stash list`; run `git stash pop` manually."
             );
+            stash_restore_err = Some(e);
         }
     }
 
     let report = exec_res?;
+    if let Some(err) = stash_restore_err {
+        return Err(err.into());
+    }
     let jobs_skipped = report.jobs_skipped + filtered_out;
 
     let total = start.elapsed();
@@ -848,6 +853,7 @@ async fn resolve_job_plan(hook: &Hook, job: &Job, worktree: &Path) -> RunResult<
 mod tests {
     use super::*;
     use crate::config::IsolateSpec;
+    use crate::git::GitError;
     use std::collections::BTreeMap;
     use std::process::Command as StdCommand;
     use tempfile::TempDir;
@@ -1154,5 +1160,54 @@ mod tests {
         let contents = std::fs::read_to_string(&marker).unwrap();
         let order: Vec<&str> = contents.lines().collect();
         assert_eq!(order, vec!["0", "1", "2"]);
+    }
+
+    #[tokio::test]
+    async fn stash_restore_failure_fails_the_hook() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
+
+        let mut hook = stub_hook(
+            "pre-commit",
+            vec![stub_job(
+                "poison-stash",
+                "printf 'interloper\\n' > other.txt && git add other.txt && git stash push --message external-stash",
+            )],
+        );
+        hook.stash_untracked = true;
+
+        let err = run_hook(&hook, &root).await.unwrap_err();
+        let RunError::Git(GitError::Porcelain(msg)) = err else {
+            panic!("expected git porcelain error");
+        };
+        assert!(
+            msg.contains("expected top"),
+            "stash restore failures must fail the hook, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn partially_staged_file_refuses_stash_strategy() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "staged\n").unwrap();
+        let s = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        assert!(s.success());
+        std::fs::write(root.join("a.ts"), "unstaged\n").unwrap();
+
+        let mut hook = stub_hook("pre-commit", vec![stub_job("noop", "true")]);
+        hook.stash_untracked = true;
+
+        let err = run_hook(&hook, &root).await.unwrap_err();
+        let RunError::Git(GitError::Porcelain(msg)) = err else {
+            panic!("expected git porcelain error");
+        };
+        assert!(
+            msg.contains("partially staged"),
+            "expected stash strategy refusal, got: {msg}"
+        );
     }
 }
