@@ -399,14 +399,7 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
                     })
                     .await;
                 jobs_skipped += 1;
-                release_children(
-                    &graph,
-                    idx,
-                    &pending_clone_ref(&pending),
-                    &mut pending,
-                    &started,
-                    &mut ready,
-                );
+                release_children(&graph, idx, &mut pending, &started, &mut ready);
                 continue;
             };
 
@@ -434,14 +427,7 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
                         }
                     }
                     jobs_run += 1;
-                    release_children(
-                        &graph,
-                        idx,
-                        &pending_clone_ref(&pending),
-                        &mut pending,
-                        &started,
-                        &mut ready,
-                    );
+                    release_children(&graph, idx, &mut pending, &started, &mut ready);
                     continue;
                 }
             }
@@ -491,13 +477,7 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
 
         // Release children of the finished node.
         for &child in &graph.nodes[idx].children {
-            if pending[child] > 0 {
-                pending[child] -= 1;
-            }
-            if pending[child] == 0 && !started[child] {
-                let pri = graph.nodes[child].job.priority;
-                ready.push(std::cmp::Reverse((pri, child)));
-            }
+            release_child(&graph, child, &mut pending, &started, &mut ready);
         }
     }
 
@@ -514,24 +494,42 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
 fn release_children(
     graph: &JobGraph,
     idx: usize,
-    _before: &[usize],
     pending: &mut [usize],
     started: &[bool],
     ready: &mut BinaryHeap<std::cmp::Reverse<(u32, usize)>>,
 ) {
     for &child in &graph.nodes[idx].children {
-        if pending[child] > 0 {
-            pending[child] -= 1;
-        }
-        if pending[child] == 0 && !started[child] {
-            let pri = graph.nodes[child].job.priority;
-            ready.push(std::cmp::Reverse((pri, child)));
-        }
+        release_child(graph, child, pending, started, ready);
     }
 }
 
-fn pending_clone_ref(_: &[usize]) -> Vec<usize> {
-    Vec::new()
+fn release_child(
+    graph: &JobGraph,
+    child: usize,
+    pending: &mut [usize],
+    started: &[bool],
+    ready: &mut BinaryHeap<std::cmp::Reverse<(u32, usize)>>,
+) {
+    debug_assert!(
+        pending[child] > 0,
+        "child pending count must stay positive until release"
+    );
+    if pending[child] == 0 {
+        return;
+    }
+    pending[child] -= 1;
+    if pending[child] != 0 {
+        return;
+    }
+    debug_assert!(
+        !started[child],
+        "child should not already be started when it becomes ready"
+    );
+    if started[child] {
+        return;
+    }
+    let pri = graph.nodes[child].job.priority;
+    ready.push(std::cmp::Reverse((pri, child)));
 }
 
 struct JobOutcome {
@@ -961,6 +959,59 @@ mod tests {
         assert_eq!(rep.jobs_skipped, 0);
     }
 
+    #[test]
+    fn default_parallel_limit_matches_runtime_parallelism() {
+        let expected = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
+        assert_eq!(default_parallel_limit(), expected);
+        assert!(default_parallel_limit() > 0);
+    }
+
+    #[test]
+    fn parse_env_list_trims_and_discards_empty_entries() {
+        unsafe {
+            std::env::set_var("BETTERHOOK_TEST_LIST", " lint , ,test,, fmt ");
+        }
+        let values = parse_env_list("BETTERHOOK_TEST_LIST");
+        unsafe {
+            std::env::remove_var("BETTERHOOK_TEST_LIST");
+        }
+        assert_eq!(values, vec!["lint", "test", "fmt"]);
+    }
+
+    #[test]
+    fn run_options_from_env_reads_skip_only_and_no_locks() {
+        unsafe {
+            std::env::set_var("BETTERHOOK_SKIP", "lint, test");
+            std::env::set_var("BETTERHOOK_ONLY", "fmt");
+            std::env::set_var("BETTERHOOK_NO_LOCKS", "1");
+        }
+        let options = RunOptions::from_env();
+        unsafe {
+            std::env::remove_var("BETTERHOOK_SKIP");
+            std::env::remove_var("BETTERHOOK_ONLY");
+            std::env::remove_var("BETTERHOOK_NO_LOCKS");
+        }
+
+        assert_eq!(options.skip, vec!["lint", "test"]);
+        assert_eq!(options.only, vec!["fmt"]);
+        assert!(matches!(options.sink, SinkKind::Tty));
+        assert!(options.no_locks);
+    }
+
+    #[test]
+    fn run_options_filtering_honors_only_then_skip() {
+        let options = RunOptions {
+            skip: vec!["fmt".to_owned()],
+            only: vec!["lint".to_owned(), "fmt".to_owned()],
+            sink: SinkKind::Tty,
+            no_locks: false,
+        };
+
+        assert!(!options.is_filtered("lint"));
+        assert!(options.is_filtered("fmt"));
+        assert!(options.is_filtered("test"));
+    }
+
     #[tokio::test]
     async fn run_hook_reports_failure_on_nonzero_exit() {
         let (_d, root) = new_git_repo();
@@ -1035,6 +1086,51 @@ mod tests {
         let rep = run_hook(&hook, &root).await.unwrap();
         assert!(rep.ok);
         assert_eq!(rep.jobs_run, 4);
+    }
+
+    #[tokio::test]
+    async fn parallel_limit_caps_max_in_flight_jobs() {
+        let (_d, root) = new_git_repo();
+        let current = root.join("bh-current");
+        let max_seen = root.join("bh-max");
+        let lock_dir = root.join("bh-counter-lock");
+        std::fs::write(&current, "0\n").unwrap();
+        std::fs::write(&max_seen, "0\n").unwrap();
+
+        let make_job = |name: &str| {
+            stub_job(
+                name,
+                &format!(
+                    "while ! mkdir {lock} 2>/dev/null; do sleep 0.01; done; \
+                     v=$(cat {current}); v=$((v+1)); echo $v > {current}; \
+                     m=$(cat {max_seen}); if [ \"$v\" -gt \"$m\" ]; then echo $v > {max_seen}; fi; \
+                     rmdir {lock}; \
+                     sleep 0.15; \
+                     while ! mkdir {lock} 2>/dev/null; do sleep 0.01; done; \
+                     v=$(cat {current}); echo $((v-1)) > {current}; rmdir {lock}",
+                    lock = lock_dir.display(),
+                    current = current.display(),
+                    max_seen = max_seen.display(),
+                ),
+            )
+        };
+
+        let mut hook = stub_hook(
+            "pre-commit",
+            vec![
+                make_job("one"),
+                make_job("two"),
+                make_job("three"),
+                make_job("four"),
+            ],
+        );
+        hook.parallel = true;
+        hook.parallel_limit = Some(2);
+
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(rep.ok);
+        assert_eq!(rep.jobs_run, 4);
+        assert_eq!(std::fs::read_to_string(&max_seen).unwrap().trim(), "2");
     }
 
     #[tokio::test]
@@ -1125,6 +1221,162 @@ mod tests {
         assert!(rep.ok);
         assert_eq!(rep.jobs_run, 1);
         assert_eq!(rep.jobs_skipped, 2);
+    }
+
+    #[tokio::test]
+    async fn parallel_skip_is_counted_when_template_matches_no_files() {
+        let (_d, root) = new_git_repo();
+
+        let mut skipped = stub_job("fmt", "prettier --write {staged_files}");
+        skipped.glob = vec!["*.py".to_owned()];
+        let ran = stub_job("lint", "true");
+
+        let mut hook = stub_hook("pre-commit", vec![skipped, ran]);
+        hook.parallel = true;
+        hook.parallel_limit = Some(2);
+
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(rep.ok);
+        assert_eq!(rep.jobs_run, 1);
+        assert_eq!(rep.jobs_skipped, 1);
+    }
+
+    #[tokio::test]
+    async fn parallel_cached_failure_fails_hook_and_counts_as_run() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "cached\n").unwrap();
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let common = crate::git::git_common_dir(&root).await.unwrap();
+        let mut job = stub_job("lint", "eslint {staged_files}");
+        job.glob = vec!["*.ts".to_owned()];
+        job.concurrent_safe = true;
+        let files = vec![root.join("a.ts")];
+        let cached = crate::cache::CachedResult {
+            exit: 1,
+            events: Vec::new(),
+            created_at: std::time::SystemTime::now(),
+            inputs: crate::cache::snapshot_inputs(&files),
+        };
+        crate::cache::store_result(&common, &job, &files, &cached)
+            .await
+            .unwrap();
+
+        let mut hook = stub_hook("pre-commit", vec![job]);
+        hook.parallel = true;
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(!rep.ok, "cached nonzero exit should fail the hook");
+        assert_eq!(rep.jobs_run, 1);
+        assert_eq!(rep.jobs_skipped, 0);
+    }
+
+    #[tokio::test]
+    async fn successful_non_concurrent_safe_job_does_not_write_cache() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "uncached\n").unwrap();
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let common = crate::git::git_common_dir(&root).await.unwrap();
+        let mut job = stub_job("lint", "true");
+        job.glob = vec!["*.ts".to_owned()];
+        let files = vec![root.join("a.ts")];
+
+        let hook = stub_hook("pre-commit", vec![job.clone()]);
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(rep.ok);
+        assert!(
+            crate::cache::lookup(&common, &job, &files)
+                .await
+                .unwrap()
+                .is_none(),
+            "non-concurrent-safe jobs must not populate the cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_concurrent_safe_job_does_not_write_cache() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "failed-cache\n").unwrap();
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let common = crate::git::git_common_dir(&root).await.unwrap();
+        let mut job = stub_job("lint", "false");
+        job.glob = vec!["*.ts".to_owned()];
+        job.concurrent_safe = true;
+        let files = vec![root.join("a.ts")];
+
+        let hook = stub_hook("pre-commit", vec![job.clone()]);
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(!rep.ok);
+        assert!(
+            crate::cache::lookup(&common, &job, &files)
+                .await
+                .unwrap()
+                .is_none(),
+            "failed jobs must not populate the cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_parent_completion_releases_blocked_child() {
+        let (_d, root) = new_git_repo();
+        let marker = root.join("parent-done");
+
+        let mut parent = stub_job("parent", &format!("printf done > {}", marker.display()));
+        parent.writes = vec!["shared".to_owned()];
+        let mut child = stub_job("child", &format!("[ -f {} ]", marker.display()));
+        child.reads = vec!["shared".to_owned()];
+
+        let mut hook = stub_hook("pre-commit", vec![parent, child]);
+        hook.parallel = true;
+        hook.parallel_limit = Some(2);
+
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(rep.ok);
+        assert_eq!(rep.jobs_run, 2);
+        assert_eq!(rep.jobs_skipped, 0);
+        assert!(marker.exists(), "parent must have run before child");
+    }
+
+    #[tokio::test]
+    async fn skipped_parallel_parent_releases_blocked_child() {
+        let (_d, root) = new_git_repo();
+        let marker = root.join("child-after-skip");
+
+        let mut parent = stub_job("parent", "prettier --write {staged_files}");
+        parent.glob = vec!["*.py".to_owned()];
+        parent.writes = vec!["shared".to_owned()];
+
+        let mut child = stub_job("child", &format!("printf ready > {}", marker.display()));
+        child.reads = vec!["shared".to_owned()];
+
+        let mut hook = stub_hook("pre-commit", vec![parent, child]);
+        hook.parallel = true;
+        hook.parallel_limit = Some(2);
+
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(rep.ok);
+        assert_eq!(rep.jobs_run, 1);
+        assert_eq!(rep.jobs_skipped, 1);
+        assert!(
+            marker.exists(),
+            "child must run after skipped parent releases it"
+        );
     }
 
     #[tokio::test]
