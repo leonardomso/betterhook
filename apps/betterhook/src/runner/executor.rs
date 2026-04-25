@@ -874,7 +874,9 @@ async fn resolve_job_plan(hook: &Hook, job: &Job, worktree: &Path) -> RunResult<
 mod tests {
     use super::*;
     use crate::config::IsolateSpec;
+    use crate::config::ToolPathScope;
     use crate::git::GitError;
+    use crate::runner::output::Stream;
     use std::collections::BTreeMap;
     use std::process::Command as StdCommand;
     use tempfile::TempDir;
@@ -1053,6 +1055,82 @@ mod tests {
         assert!(rep.ok);
         assert_eq!(rep.jobs_skipped, 1);
         assert_eq!(rep.jobs_run, 0);
+    }
+
+    #[tokio::test]
+    async fn snapshot_unstaged_skips_when_stage_fixed_is_disabled() {
+        let (_d, root) = new_git_repo();
+        let job = stub_job("fmt", "prettier --write a.ts");
+
+        let before = snapshot_unstaged_if_needed(&job, &root).await.unwrap();
+
+        assert!(before.is_none());
+    }
+
+    #[tokio::test]
+    async fn snapshot_unstaged_skips_interactive_jobs() {
+        let (_d, root) = new_git_repo();
+        let mut job = stub_job("fmt", "prettier --write a.ts");
+        job.stage_fixed = true;
+        job.interactive = true;
+
+        let before = snapshot_unstaged_if_needed(&job, &root).await.unwrap();
+
+        assert!(before.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_job_plan_non_template_ignores_staged_files() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "2\n").unwrap();
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let hook = stub_hook("pre-commit", Vec::new());
+        let job = stub_job("lint", "eslint .");
+
+        let plan = resolve_job_plan(&hook, &job, &root).await.unwrap().unwrap();
+
+        assert_eq!(plan.commands, vec!["eslint .".to_owned()]);
+        assert_eq!(plan.cwd, root);
+        assert!(
+            plan.files.is_empty(),
+            "non-template jobs should not snapshot staged files"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_job_plan_pre_push_uses_push_diff_without_template() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "2\n").unwrap();
+        let git = |args: &[&str]| {
+            let status = StdCommand::new("git")
+                .current_dir(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t.t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t.t")
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?} failed");
+        };
+        git(&["add", "a.ts"]);
+        git(&["commit", "-q", "-m", "second"]);
+
+        let mut job = stub_job("lint", "eslint .");
+        job.glob = vec!["*.ts".to_owned()];
+        let hook = stub_hook("pre-push", Vec::new());
+
+        let plan = resolve_job_plan(&hook, &job, &root).await.unwrap().unwrap();
+
+        assert_eq!(plan.commands, vec!["eslint .".to_owned()]);
+        assert_eq!(plan.cwd, root);
+        assert_eq!(plan.files, vec![root.join("a.ts")]);
     }
 
     #[tokio::test]
@@ -1291,7 +1369,8 @@ mod tests {
         job.glob = vec!["*.ts".to_owned()];
         let files = vec![root.join("a.ts")];
 
-        let hook = stub_hook("pre-commit", vec![job.clone()]);
+        let mut hook = stub_hook("pre-commit", vec![job.clone()]);
+        hook.parallel = true;
         let rep = run_hook(&hook, &root).await.unwrap();
         assert!(rep.ok);
         assert!(
@@ -1320,7 +1399,8 @@ mod tests {
         job.concurrent_safe = true;
         let files = vec![root.join("a.ts")];
 
-        let hook = stub_hook("pre-commit", vec![job.clone()]);
+        let mut hook = stub_hook("pre-commit", vec![job.clone()]);
+        hook.parallel = true;
         let rep = run_hook(&hook, &root).await.unwrap();
         assert!(!rep.ok);
         assert!(
@@ -1329,6 +1409,36 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "failed jobs must not populate the cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_concurrent_safe_job_writes_cache() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "cache-me\n").unwrap();
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let common = crate::git::git_common_dir(&root).await.unwrap();
+        let mut job = stub_job("lint", "printf 'ok\\n'");
+        job.glob = vec!["*.ts".to_owned()];
+        job.concurrent_safe = true;
+        let files = vec![root.join("a.ts")];
+
+        let mut hook = stub_hook("pre-commit", vec![job.clone()]);
+        hook.parallel = true;
+        let rep = run_hook(&hook, &root).await.unwrap();
+        assert!(rep.ok);
+        assert!(
+            crate::cache::lookup(&common, &job, &files)
+                .await
+                .unwrap()
+                .is_some(),
+            "successful concurrent-safe jobs should populate the cache"
         );
     }
 
@@ -1377,6 +1487,199 @@ mod tests {
             marker.exists(),
             "child must run after skipped parent releases it"
         );
+    }
+
+    #[tokio::test]
+    async fn emit_builtin_diagnostics_emits_rustfmt_findings() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let captured = vec![OutputEvent::Line {
+            job: "fmt".to_owned(),
+            stream: Stream::Stdout,
+            line: "Diff in /repo/src/main.rs at line 12:".to_owned(),
+        }];
+
+        emit_builtin_diagnostics("rustfmt", "fmt", &captured, &tx).await;
+        drop(tx);
+
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+        assert!(events.iter().any(|event| matches!(
+            event,
+            OutputEvent::Diagnostic { file, line, .. }
+            if file == "/repo/src/main.rs" && *line == Some(12)
+        )));
+    }
+
+    #[tokio::test]
+    async fn emit_builtin_diagnostics_emits_clippy_findings() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let captured = vec![OutputEvent::Line {
+            job: "lint".to_owned(),
+            stream: Stream::Stdout,
+            line: r#"{"reason":"compiler-message","message":{"level":"warning","message":"unused variable: `x`","code":{"code":"unused_variables"},"spans":[{"file_name":"src/main.rs","line_start":3,"column_start":9,"is_primary":true}]}}"#.to_owned(),
+        }];
+
+        emit_builtin_diagnostics("clippy", "lint", &captured, &tx).await;
+        drop(tx);
+
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+        assert!(events.iter().any(|event| matches!(
+            event,
+            OutputEvent::Diagnostic { file, line, rule, .. }
+            if file == "src/main.rs" && *line == Some(3) && rule.as_deref() == Some("unused_variables")
+        )));
+    }
+
+    #[tokio::test]
+    async fn emit_builtin_diagnostics_emits_prettier_findings() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let captured = vec![OutputEvent::Line {
+            job: "fmt".to_owned(),
+            stream: Stream::Stdout,
+            line: "Checking formatting...\n[warn] src/main.ts\n[warn] src/Button.tsx\n[warn] Code style issues found in 2 files.".to_owned(),
+        }];
+
+        emit_builtin_diagnostics("prettier", "fmt", &captured, &tx).await;
+        drop(tx);
+
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+        let files: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                OutputEvent::Diagnostic { file, .. } => Some(file.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(files, vec!["src/main.ts", "src/Button.tsx"]);
+    }
+
+    #[tokio::test]
+    async fn emit_builtin_diagnostics_emits_remaining_builtin_findings() {
+        let cases = [
+            (
+                "eslint",
+                r#"[{"filePath":"/a.ts","messages":[{"ruleId":"no-unused-vars","severity":2,"message":"x unused","line":3,"column":7}]}]"#,
+                "/a.ts",
+            ),
+            (
+                "ruff",
+                r#"[{"code":"F401","message":"unused import","filename":"/a.py","location":{"row":3,"column":1}}]"#,
+                "/a.py",
+            ),
+            (
+                "black",
+                "would reformat src/main.py\nwould reformat src/cli.py\nOh no! 2 files.\n",
+                "src/main.py",
+            ),
+            ("gofmt", "cmd/main.go\ninternal/foo.go\n", "cmd/main.go"),
+            (
+                "govet",
+                "./cmd/main.go:12:4: printf call has possible formatting\n",
+                "./cmd/main.go",
+            ),
+            (
+                "biome",
+                r#"{"diagnostics":[{"category":"lint/suspicious/noDoubleEquals","severity":"error","description":"Use ===","location":{"path":{"file":"src/main.ts"}}}]}"#,
+                "src/main.ts",
+            ),
+            (
+                "oxlint",
+                r#"[{"filePath":"/a.ts","messages":[{"ruleId":"no-unused-vars","severity":2,"message":"unused","line":1,"column":1}]}]"#,
+                "/a.ts",
+            ),
+            (
+                "shellcheck",
+                r#"[{"file":"a.sh","line":14,"column":5,"level":"warning","code":2086,"message":"Double quote to prevent globbing."}]"#,
+                "a.sh",
+            ),
+            (
+                "gitleaks",
+                r#"[{"RuleID":"aws-access-key","Description":"AWS Access Key","File":"deploy/secrets.env","StartLine":4,"StartColumn":9}]"#,
+                "deploy/secrets.env",
+            ),
+        ];
+
+        for (builtin_id, line, expected_file) in cases {
+            let (tx, mut rx) = mpsc::channel(8);
+            let captured = vec![OutputEvent::Line {
+                job: "lint".to_owned(),
+                stream: Stream::Stdout,
+                line: line.to_owned(),
+            }];
+
+            emit_builtin_diagnostics(builtin_id, "lint", &captured, &tx).await;
+            drop(tx);
+
+            let mut files = Vec::new();
+            while let Some(event) = rx.recv().await {
+                if let OutputEvent::Diagnostic { file, .. } = event {
+                    files.push(file);
+                }
+            }
+            assert!(
+                files.iter().any(|file| file == expected_file),
+                "expected diagnostic for builtin {builtin_id} to include {expected_file}, got {files:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn acquire_if_isolated_returns_guard_and_extra_env() {
+        let (_d, root) = new_git_repo();
+        let common = crate::git::git_common_dir(&root).await.unwrap();
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut job = stub_job("cargo-build", "true");
+        job.isolate = Some(IsolateSpec::ToolPath {
+            tool: "cargo".to_owned(),
+            target_dir: ToolPathScope::PerWorktree,
+        });
+
+        let (guard, extra_env) = acquire_if_isolated(&job, &common, &root, false, &tx).await;
+        drop(tx);
+
+        assert!(guard.is_some(), "expected isolate lock guard");
+        assert_eq!(
+            extra_env,
+            vec![(
+                "CARGO_TARGET_DIR".to_owned(),
+                root.join("target").display().to_string()
+            )]
+        );
+        assert!(
+            rx.recv().await.is_none(),
+            "successful lock should not emit skip events"
+        );
+    }
+
+    #[tokio::test]
+    async fn acquire_if_isolated_respects_no_locks_flag() {
+        let (_d, root) = new_git_repo();
+        let common = crate::git::git_common_dir(&root).await.unwrap();
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut job = stub_job("cargo-build", "true");
+        job.isolate = Some(IsolateSpec::Tool {
+            name: "cargo".to_owned(),
+        });
+
+        let (guard, extra_env) = acquire_if_isolated(&job, &common, &root, true, &tx).await;
+        drop(tx);
+
+        assert!(guard.is_none());
+        assert!(extra_env.is_empty());
+        let event = rx.recv().await.expect("expected no-locks warning event");
+        assert!(matches!(
+            event,
+            OutputEvent::JobSkipped { job, reason }
+            if job == "cargo-build" && reason.contains("running unlocked")
+        ));
     }
 
     #[tokio::test]
