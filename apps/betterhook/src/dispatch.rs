@@ -397,6 +397,9 @@ mod hook_merge_tests {
         assert!(!merged.parallel);
         assert!(!merged.fail_fast);
         assert!(!merged.stash_untracked);
+        assert!(merged.parallel_explicit);
+        assert!(merged.fail_fast_explicit);
+        assert!(merged.stash_untracked_explicit);
     }
 
     #[test]
@@ -423,13 +426,40 @@ mod hook_merge_tests {
         assert!(merged.parallel);
         assert!(merged.fail_fast);
         assert!(!merged.stash_untracked);
+        assert!(merged.parallel_explicit);
+        assert!(merged.fail_fast_explicit);
+        assert!(merged.stash_untracked_explicit);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Package;
+    use std::collections::BTreeMap;
     use tempfile::tempdir;
+
+    fn mk_config(pkgs: Vec<(String, &str)>) -> Config {
+        let mut packages = BTreeMap::new();
+        for (name, path) in pkgs {
+            packages.insert(
+                name.clone(),
+                Package {
+                    name,
+                    path: PathBuf::from(path),
+                    hooks: BTreeMap::new(),
+                },
+            );
+        }
+        Config {
+            meta: crate::config::Meta {
+                version: 1,
+                min_betterhook: None,
+            },
+            hooks: BTreeMap::new(),
+            packages,
+        }
+    }
 
     #[test]
     fn find_config_returns_none_when_absent() {
@@ -479,6 +509,88 @@ mod tests {
         match out {
             Dispatch::Run { hook_name, .. } => assert_eq!(hook_name, "pre-commit"),
             _ => panic!("expected Dispatch::Run"),
+        }
+    }
+
+    #[test]
+    fn dispatch_hook_and_noop_helpers_match_variants() {
+        assert!(Dispatch::NoConfig.hook().is_none());
+        assert!(Dispatch::HookNotConfigured.hook().is_none());
+        assert!(Dispatch::NoJobs.hook().is_none());
+        assert!(Dispatch::NoConfig.is_noop());
+        assert!(Dispatch::HookNotConfigured.is_noop());
+        assert!(Dispatch::NoJobs.is_noop());
+
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("betterhook.toml"),
+            "[hooks.pre-commit.jobs.a]\nrun = \"true\"\n",
+        )
+        .unwrap();
+        let out = resolve(dir.path(), "pre-commit").unwrap();
+        let hook = out.hook().expect("run dispatch should expose hook");
+        assert_eq!(hook.name, "pre-commit");
+        assert_eq!(hook.jobs.len(), 1);
+        assert!(!out.is_noop());
+    }
+
+    #[test]
+    fn resolve_package_only_empty_hook_is_no_jobs() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("betterhook.toml"),
+            "[packages.frontend]\npath = \"apps/web\"\n[packages.frontend.hooks.pre-commit]\n",
+        )
+        .unwrap();
+        let out = resolve(dir.path(), "pre-commit").unwrap();
+        assert!(matches!(out, Dispatch::NoJobs));
+        assert!(out.is_noop());
+    }
+
+    #[test]
+    fn resolve_packages_omits_root_bucket_when_every_file_matches_a_package() {
+        let config = mk_config(vec![
+            ("frontend".to_owned(), "apps/web"),
+            ("api".to_owned(), "apps/api"),
+        ]);
+        let matches = resolve_packages(
+            &config,
+            &[
+                PathBuf::from("apps/web/src/app.ts"),
+                PathBuf::from("apps/api/src/main.rs"),
+            ],
+        );
+
+        assert_eq!(matches.len(), 2);
+        assert!(
+            matches
+                .iter()
+                .all(|entry| matches!(entry, PackageMatch::Package(_, files) if !files.is_empty()))
+        );
+    }
+
+    #[test]
+    fn resolve_packages_keeps_only_unmatched_files_in_root_bucket() {
+        let config = mk_config(vec![("frontend".to_owned(), "apps/web")]);
+        let matches = resolve_packages(
+            &config,
+            &[
+                PathBuf::from("README.md"),
+                PathBuf::from("apps/web/src/app.ts"),
+            ],
+        );
+
+        assert_eq!(matches.len(), 2);
+        match &matches[0] {
+            PackageMatch::Root(files) => assert_eq!(files, &vec![PathBuf::from("README.md")]),
+            PackageMatch::Package(_, _) => panic!("expected root bucket first"),
+        }
+        match &matches[1] {
+            PackageMatch::Package(pkg, files) => {
+                assert_eq!(pkg.name, "frontend");
+                assert_eq!(files, &vec![PathBuf::from("apps/web/src/app.ts")]);
+            }
+            PackageMatch::Root(_) => panic!("expected package bucket second"),
         }
     }
 }

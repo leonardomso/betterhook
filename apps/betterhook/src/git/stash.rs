@@ -207,6 +207,85 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unique_message_is_prefixed_and_unique() {
+        let first = unique_message();
+        let second = unique_message();
+        assert!(first.starts_with("betterhook-stash-"));
+        assert!(second.starts_with("betterhook-stash-"));
+        assert_ne!(first, second);
+    }
+
+    #[tokio::test]
+    async fn tracked_dirty_file_is_stashed_and_restored() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("a.ts"), "dirty\n").unwrap();
+
+        let guard = StashGuard::push(&root).await.unwrap();
+        assert!(guard.created());
+        assert!(guard.message().starts_with("betterhook-stash-"));
+        assert_eq!(std::fs::read_to_string(root.join("a.ts")).unwrap(), "one\n");
+
+        guard.pop().await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.ts")).unwrap(),
+            "dirty\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn pop_refuses_when_stash_disappears() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
+        let guard = StashGuard::push(&root).await.unwrap();
+        assert!(guard.created());
+
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["stash", "drop", "stash@{0}"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let msg = format!("{}", guard.pop().await.unwrap_err());
+        assert!(
+            msg.contains("disappeared"),
+            "expected disappearance error, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pop_refuses_when_our_stash_is_not_on_top() {
+        let (_d, root) = new_git_repo();
+        std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
+        let guard = StashGuard::push(&root).await.unwrap();
+        assert!(guard.created());
+
+        std::fs::write(root.join("other.log"), "later\n").unwrap();
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args([
+                "stash",
+                "push",
+                "--include-untracked",
+                "--message",
+                "other-stash",
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let msg = format!("{}", guard.pop().await.unwrap_err());
+        assert!(
+            msg.contains("stash@{1}"),
+            "expected top-of-stack refusal, got: {msg}"
+        );
+        assert!(
+            msg.contains("refusing to pop"),
+            "expected refusal wording, got: {msg}"
+        );
+    }
+
     #[tokio::test]
     async fn partially_staged_tracked_file_is_rejected() {
         let (_d, root) = new_git_repo();

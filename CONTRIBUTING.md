@@ -43,6 +43,27 @@ cargo build --release -p xtask
 ./target/release/xtask fuzz-smoke           # fast seed-corpus check
 ```
 
+## Mutation testing
+
+We use [`cargo-mutants`](https://github.com/sourcefrog/cargo-mutants) to
+find logic that is reached by tests but not meaningfully asserted.
+Start with a narrow file or package rather than the whole workspace.
+
+```bash
+cargo install --locked cargo-mutants
+
+# Target one file and keep results for iterative reruns.
+cargo mutants -p betterhook -f apps/betterhook/src/dispatch.rs -o /tmp/mutants-dispatch
+
+# After adding tests, rerun only the prior survivors.
+cargo mutants -p betterhook -f apps/betterhook/src/dispatch.rs --iterate -o /tmp/mutants-dispatch
+```
+
+For broad sweeps, mutate one subsystem at a time. Use the mutation
+survivors to drive test additions, then rerun the same output
+directory with `--iterate` until the remaining survivors are either
+intentional or impractical to test.
+
 ## Commit messages
 
 We use [Conventional Commits](https://www.conventionalcommits.org/):
