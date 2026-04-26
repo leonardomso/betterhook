@@ -7,8 +7,6 @@
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
-use fs4::fs_std::FileExt;
-
 /// A held fs2/fs4 exclusive advisory lock. Drops release the lock.
 #[derive(Debug)]
 pub struct FileLock {
@@ -30,14 +28,14 @@ impl FileLock {
             .create(true)
             .truncate(false)
             .open(&path)?;
-        file.lock_exclusive()?;
+        file.lock()?;
         Ok(Self { file, path })
     }
 }
 
 impl Drop for FileLock {
     fn drop(&mut self) {
-        let _ = FileExt::unlock(&self.file);
+        let _ = self.file.unlock();
     }
 }
 

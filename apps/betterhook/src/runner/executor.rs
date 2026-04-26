@@ -400,30 +400,29 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
             // Only `concurrent_safe` jobs are cacheable. Jobs with
             // side effects must run again so the behavior is real, not
             // replayed from prior output.
-            if job.concurrent_safe {
-                if let Ok(Some(cached)) =
+            if job.concurrent_safe
+                && let Ok(Some(cached)) =
                     crate::cache::lookup(ctx.common_dir, &job, &plan.files).await
-                {
-                    let _ = ctx
-                        .tx
-                        .send(OutputEvent::JobCacheHit {
-                            job: job.name.clone(),
-                            files: plan.files.len(),
-                        })
-                        .await;
-                    for event in cached.events {
-                        let _ = ctx.tx.send(event).await;
-                    }
-                    if cached.exit != 0 {
-                        failed = true;
-                        if fail_fast {
-                            cancel.cancel();
-                        }
-                    }
-                    jobs_run += 1;
-                    release_children(&graph, idx, &mut pending, &started, &mut ready);
-                    continue;
+            {
+                let _ = ctx
+                    .tx
+                    .send(OutputEvent::JobCacheHit {
+                        job: job.name.clone(),
+                        files: plan.files.len(),
+                    })
+                    .await;
+                for event in cached.events {
+                    let _ = ctx.tx.send(event).await;
                 }
+                if cached.exit != 0 {
+                    failed = true;
+                    if fail_fast {
+                        cancel.cancel();
+                    }
+                }
+                jobs_run += 1;
+                release_children(&graph, idx, &mut pending, &started, &mut ready);
+                continue;
             }
 
             // Spawn the real job as a named async fn. Naming the body

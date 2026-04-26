@@ -59,11 +59,9 @@ fn resolve_impl(
     merged.merge_overlay(main_content);
 
     // Apply the sibling betterhook.local.* override, if one exists.
-    if apply_local {
-        if let Some(local_path) = find_local_override(path)? {
-            let local = parse_file(&local_path)?;
-            merged.merge_overlay(local);
-        }
+    if apply_local && let Some(local_path) = find_local_override(path)? {
+        let local = parse_file(&local_path)?;
+        merged.merge_overlay(local);
     }
 
     seen.remove(&canonical);
@@ -168,7 +166,7 @@ timeout = "2m"
         let lint = &lowered.hooks["pre-commit"].jobs[0];
         assert_eq!(lint.name, "lint");
         assert_eq!(lint.run, "eslint {staged_files}"); // inherited from base
-        assert_eq!(lint.timeout, Some(std::time::Duration::from_secs(120)));
+        assert_eq!(lint.timeout, Some(std::time::Duration::from_mins(2)));
     }
 
     #[test]
@@ -225,7 +223,7 @@ timeout = "5m"
         );
         let merged = resolve(&main).unwrap().lower().unwrap();
         let lint = &merged.hooks["pre-commit"].jobs[0];
-        assert_eq!(lint.timeout, Some(std::time::Duration::from_secs(300)));
+        assert_eq!(lint.timeout, Some(std::time::Duration::from_mins(5)));
     }
 
     #[test]

@@ -115,10 +115,10 @@ fn print_json(
     });
     let mut jobs = Vec::new();
     for job in &hook.jobs {
-        if let Some(filter) = args.job.as_deref() {
-            if filter != job.name {
-                continue;
-            }
+        if let Some(filter) = args.job.as_deref()
+            && filter != job.name
+        {
+            continue;
         }
         jobs.push(serde_json::json!({
             "name": job.name,

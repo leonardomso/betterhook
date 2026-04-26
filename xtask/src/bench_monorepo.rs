@@ -152,8 +152,7 @@ fn which(bin: &str) -> bool {
     Command::new(bin)
         .arg("--version")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 /// Build a small synthetic repo with `PACKAGES.len()` packages, each

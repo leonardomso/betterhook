@@ -44,16 +44,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@1.86
+      - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: build (MSRV 1.86)
+      - name: build (MSRV 1.95)
         run: cargo build --workspace
 
-      - name: test (MSRV 1.86)
+      - name: test (MSRV 1.95)
         run: cargo test --workspace
 
   fuzz-smoke:

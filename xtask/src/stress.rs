@@ -85,7 +85,7 @@ pub fn run(_args: &[String]) -> ExitCode {
         eprintln!("xtask stress: hook verification failed: {e}");
         return ExitCode::from(1);
     }
-    if elapsed > Duration::from_secs(60) {
+    if elapsed > Duration::from_mins(1) {
         eprintln!("xtask stress: WARN — exceeded 60s soft budget");
     }
     ExitCode::SUCCESS

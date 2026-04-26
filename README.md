@@ -348,7 +348,7 @@ Run `cargo run -p xtask -- bench` to measure on your machine.
 
 ## Development
 
-Rust 1.86+ and standard git. [Bun](https://bun.sh) is used for the docs site only.
+Rust 1.95+ and standard git. [Bun](https://bun.sh) is used for the docs site only.
 
 ```sh
 # Build + test + lint

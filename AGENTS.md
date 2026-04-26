@@ -28,7 +28,7 @@ Read first:
 
 ## 2. Tech stack
 
-- **Language**: Rust (edition 2024, MSRV 1.86), Cargo workspace
+- **Language**: Rust (edition 2024, MSRV 1.95), Cargo workspace
 - **Async runtime**: `tokio` (full features) + `tokio-util` (codec)
 - **CLI**: `clap` (derive)
 - **Config parsing**: `toml`, `serde_yaml_ng`, `kdl`, `serde_json` (multi-format: TOML + YAML + KDL + JSON)
@@ -186,7 +186,7 @@ cargo build --release -p xtask
 
 ## 7. Engineering rules (non-negotiable)
 
-1. **Rust edition 2024.** MSRV 1.86.
+1. **Rust edition 2024.** MSRV 1.95.
 2. **Async with Tokio.** All subprocess and I/O work goes through Tokio. No blocking in async context.
 3. **Errors.** Use `miette` for user-facing errors, `thiserror` for internal typed errors. Provide helpful diagnostic messages.
 4. **Clippy pedantic.** Treat warnings as errors. Don't suppress without justification.

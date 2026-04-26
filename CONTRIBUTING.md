@@ -6,7 +6,7 @@ merged.
 
 ## Prerequisites
 
-- **Rust 1.86+** (edition 2024). Install via [rustup](https://rustup.rs).
+- **Rust 1.95+** (edition 2024). Install via [rustup](https://rustup.rs).
 - **bun 1.x** for the Mintlify docs site.
 - **git** (any recent version).
 

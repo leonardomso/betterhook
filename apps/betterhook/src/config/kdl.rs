@@ -176,10 +176,10 @@ fn parse_job(node: &KdlNode) -> ConfigResult<(String, RawJob)> {
             "env" => {
                 // `env KEY="value" OTHER="value"` — all properties.
                 for entry in child.entries() {
-                    if let Some(ident) = entry.name() {
-                        if let Some(value) = entry.value().as_string() {
-                            job.env.insert(ident.value().to_owned(), value.to_owned());
-                        }
+                    if let Some(ident) = entry.name()
+                        && let Some(value) = entry.value().as_string()
+                    {
+                        job.env.insert(ident.value().to_owned(), value.to_owned());
                     }
                 }
             }
@@ -207,10 +207,11 @@ fn parse_isolate(node: &KdlNode) -> ConfigResult<RawIsolate> {
         .filter_map(|e| e.name().map(|n| (n.value(), e)))
         .collect();
 
-    if properties.is_empty() && positional.len() == 1 {
-        if let Some(s) = positional[0].value().as_string() {
-            return Ok(RawIsolate::Name(s.to_owned()));
-        }
+    if properties.is_empty()
+        && positional.len() == 1
+        && let Some(s) = positional[0].value().as_string()
+    {
+        return Ok(RawIsolate::Name(s.to_owned()));
     }
 
     // Table form: `isolate tool="cargo" target-dir="per-worktree"`
@@ -254,10 +255,10 @@ fn normalize_field(name: &str) -> String {
 
 fn first_positional_string(node: &KdlNode) -> Option<String> {
     for entry in node.entries() {
-        if entry.name().is_none() {
-            if let Some(s) = entry.value().as_string() {
-                return Some(s.to_owned());
-            }
+        if entry.name().is_none()
+            && let Some(s) = entry.value().as_string()
+        {
+            return Some(s.to_owned());
         }
     }
     None
@@ -273,10 +274,10 @@ fn all_positional_strings(node: &KdlNode) -> Vec<String> {
 
 fn first_positional_bool(node: &KdlNode) -> Option<bool> {
     for entry in node.entries() {
-        if entry.name().is_none() {
-            if let Some(b) = entry.value().as_bool() {
-                return Some(b);
-            }
+        if entry.name().is_none()
+            && let Some(b) = entry.value().as_bool()
+        {
+            return Some(b);
         }
     }
     None
@@ -284,17 +285,17 @@ fn first_positional_bool(node: &KdlNode) -> Option<bool> {
 
 fn first_positional_integer(node: &KdlNode) -> ConfigResult<Option<u32>> {
     for entry in node.entries() {
-        if entry.name().is_none() {
-            if let Some(i) = entry.value().as_integer() {
-                return u32::try_from(i)
-                    .map(Some)
-                    .map_err(|_| ConfigError::Invalid {
-                        message: format!(
-                            "integer {i} out of range for field `{}`",
-                            node.name().value()
-                        ),
-                    });
-            }
+        if entry.name().is_none()
+            && let Some(i) = entry.value().as_integer()
+        {
+            return u32::try_from(i)
+                .map(Some)
+                .map_err(|_| ConfigError::Invalid {
+                    message: format!(
+                        "integer {i} out of range for field `{}`",
+                        node.name().value()
+                    ),
+                });
         }
     }
     Ok(None)

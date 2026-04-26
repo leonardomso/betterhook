@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 /// Kept long because the daemon also backs speculative execution and is
 /// useful to keep warm while a repo is actively in use. Tests override
 /// this via [`ServeOptions::idle_linger`](crate::daemon::server).
-pub const IDLE_LINGER: Duration = Duration::from_secs(60 * 60 * 24);
+pub const IDLE_LINGER: Duration = Duration::from_hours(24);
 
 /// Per-platform unit kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
