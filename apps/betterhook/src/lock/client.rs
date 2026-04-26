@@ -1,15 +1,10 @@
 //! Thin lock client used by the runner.
 //!
-//! Phase 15 ships the fallback half: every lock acquisition goes
-//! through `FileLock` advisory flock on
-//! `<common-dir>/betterhook/locks/<key>.lock`. The daemon-backed
-//! socket path is phase 16+ — this file already handles the daemon
-//! being unavailable, which is the common case until the runner
-//! starts spawning one.
-//!
-//! The runner uses this via [`acquire_job_lock`], which takes a
-//! [`crate::config::IsolateSpec`], converts it to a key, and returns
-//! a [`LockGuard`] holding the flock for the duration of the job.
+//! Lock acquisition currently goes through advisory flock files under
+//! `<common-dir>/betterhook/locks/<key>.lock`. The runner reaches this
+//! module via [`acquire_job_lock`], which converts an
+//! [`crate::config::IsolateSpec`] into a lock key and returns a
+//! [`LockGuard`] for the duration of the job.
 
 use std::path::{Path, PathBuf};
 
@@ -66,8 +61,7 @@ pub fn key_for_spec(spec: &IsolateSpec, worktree: &Path) -> (String, u32, Vec<(S
     }
 }
 
-/// Acquire a lock for this job. Phase 15 goes straight to flock; a
-/// later phase adds a daemon fast path.
+/// Acquire a lock for this job using the current backend.
 pub fn acquire_job_lock(
     common_dir: &Path,
     spec: &IsolateSpec,

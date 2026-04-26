@@ -75,20 +75,20 @@ pub struct CachedResult {
     /// as if the job had just run.
     pub events: Vec<OutputEvent>,
     /// Wall-clock time when the entry was written. Used by
-    /// `cache stats` and `cache verify` plus phase 39's freshness check.
+    /// `cache stats`, `cache verify`, and freshness checks.
     #[serde(with = "systemtime_as_secs")]
     pub created_at: SystemTime,
     /// Per-input-file mtime snapshot taken when the entry was written.
-    /// Phase 39 uses this to reject a cache hit whose input files have
-    /// been modified since the speculative run captured the result.
+    /// Used to reject a cache hit whose input files have changed since
+    /// the result was captured.
     /// `#[serde(default)]` keeps older entries readable.
     #[serde(default)]
     pub inputs: Vec<CachedInput>,
 }
 
-/// One input file recorded alongside a cache entry. The commit-time
-/// runner compares the current mtime against `modified_at` and treats
-/// any divergence as a cache miss (phase 39's freshness gate).
+/// One input file recorded alongside a cache entry. The runner compares
+/// the current mtime against `modified_at` and treats any divergence as
+/// a cache miss.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedInput {
     pub path: PathBuf,

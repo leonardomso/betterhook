@@ -2,11 +2,10 @@ use std::path::PathBuf;
 
 use miette::IntoDiagnostic;
 
-/// `betterhook serve` is the hidden subcommand invoked when the lock
-/// client needs to spawn a coordinator daemon on demand. Phase 21
-/// consolidates the old `betterhookd` binary into this subcommand so
-/// there's a single binary to install and a single path to bake into
-/// the wrapper script.
+/// `betterhook serve` is the hidden subcommand the lock client uses to
+/// spawn a coordinator daemon on demand. Keeping the daemon behind the
+/// main binary means installs and wrapper scripts only need to reference
+/// one executable path.
 ///
 /// Not listed in `--help` — users never call it directly.
 #[derive(Debug, clap::Args)]

@@ -24,9 +24,9 @@ pub struct RawConfig {
     pub extends: Vec<PathBuf>,
     #[serde(default)]
     pub hooks: BTreeMap<String, RawHook>,
-    /// Monorepo packages (phase 33+). Each entry declares a
-    /// directory path filter and optional per-package hook
-    /// overlays that inherit from the root-level `hooks` map.
+    /// Monorepo packages. Each entry declares a directory path filter
+    /// and optional per-package hook overlays that inherit from the
+    /// root-level `hooks` map.
     #[serde(default)]
     pub packages: BTreeMap<String, RawPackage>,
 }
@@ -114,7 +114,7 @@ pub struct RawJob {
     #[serde(default)]
     pub fail_text: Option<String>,
 
-    // v1 capability DAG fields (phase 25+).
+    // Capability-DAG fields.
     #[serde(default)]
     pub reads: Vec<String>,
     #[serde(default)]
@@ -175,9 +175,8 @@ pub struct Config {
 pub struct Package {
     pub name: String,
     pub path: PathBuf,
-    /// Fully-resolved per-package hooks. Phase 35 layers package
-    /// overrides on top of root hooks here; phase 33 just stores
-    /// whatever the user declared directly.
+    /// Package-declared hooks. Dispatch overlays these on top of the
+    /// root hooks when a package match is selected.
     pub hooks: BTreeMap<String, Hook>,
 }
 
@@ -222,9 +221,9 @@ pub struct Job {
     pub fail_text: Option<String>,
     pub priority: u32,
 
-    // v1 capability DAG fields (phase 25). Phase 26's DAG resolver
-    // compiles `reads`/`writes` into `GlobSet`s and uses them to
-    // decide which jobs can run in parallel.
+    // Capability-DAG inputs. The resolver compiles `reads` and
+    // `writes` into `GlobSet`s and uses them to decide which jobs can
+    // run in parallel.
     /// Glob patterns describing files this job reads from. Used by
     /// the DAG resolver to detect read-after-write conflicts.
     pub reads: Vec<String>,
@@ -235,9 +234,9 @@ pub struct Job {
     /// True if this job reaches the network. Network jobs are
     /// serialized behind a shared lock unless `concurrent_safe`.
     pub network: bool,
-    /// True if this job is safe to run speculatively on file save
-    /// from the daemon watcher (phases 37-39). Safe means: no
-    /// network, no writes that touch unrelated files, idempotent.
+    /// True if this job is safe to run speculatively on file save from
+    /// the daemon watcher. Safe means: no network, no unrelated writes,
+    /// and idempotent behavior.
     pub concurrent_safe: bool,
     /// If set, names a registered builtin whose `parse_output` is
     /// called on the subprocess stdout to emit structured `Diagnostic`
@@ -302,9 +301,9 @@ impl RawConfig {
         let mut packages = BTreeMap::new();
         for (pkg_name, raw_pkg) in self.packages {
             let mut pkg_hooks = BTreeMap::new();
-            // Phase 33 lowers every hook the package declared. Phase 35
-            // will overlay these on top of the root hooks during
-            // dispatch so packages can add-or-override per-job.
+            // Lower every hook the package declared. Dispatch overlays
+            // these on top of the root hooks so packages can add or
+            // replace per-job behavior.
             for (hook_name, raw_hook) in raw_pkg.hooks {
                 let hook = lower_hook(&hook_name, raw_hook)?;
                 pkg_hooks.insert(hook_name, hook);

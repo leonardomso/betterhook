@@ -1,7 +1,6 @@
-//! Compatibility shim — `betterhook migrate` was renamed to
-//! `betterhook import --from lefthook` in phase 51. This module
-//! re-exports the lefthook importer so older callers (and the hidden
-//! `migrate` CLI alias) keep working.
+//! Compatibility shim for the old `betterhook migrate` entry point.
+//! This module re-exports the lefthook importer so older callers (and
+//! the hidden `migrate` CLI alias) keep working.
 
 use std::path::Path;
 

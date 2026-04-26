@@ -1,14 +1,12 @@
 //! Speculative runner orchestrator.
 //!
-//! Phase 38 consumes [`WatcherEvent`](super::watcher::WatcherEvent)s
-//! from the file watcher, debounces them per path, filters to the
-//! set of `concurrent_safe` jobs whose file globs match, and emits
-//! `SpeculativeTask`s to the runner.
+//! Consumes [`WatcherEvent`](super::watcher::WatcherEvent)s from the
+//! file watcher, debounces them per path, filters to matching
+//! `concurrent_safe` jobs, and emits `SpeculativeTask`s to the runner.
 //!
-//! The actual "run job + store in CA cache" step stays in
-//! `runner::executor` — this module is just the glue between the
-//! watcher and the executor. That keeps the implementation small
-//! and easy to reason about in isolation.
+//! The actual "run job and store in the cache" work stays in
+//! `runner::executor`; this module only connects the watcher to the
+//! executor.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -24,9 +22,9 @@ use crate::config::{Config, Hook, Job};
 
 use super::watcher::WatcherEvent;
 
-/// Snapshot of the speculative runner's health. Phase 40 writes this
-/// to `<common>/betterhook/speculative-stats.json` after every handled
-/// event so `betterhook status` can read it without a socket round-trip.
+/// Snapshot of speculative-runner health written to
+/// `<common>/betterhook/speculative-stats.json` after handled events so
+/// `betterhook status` can read it without a socket round-trip.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SpeculativeStats {
     /// Number of worktree roots the daemon is currently watching.

@@ -3,7 +3,7 @@
 //! Both the sequential and parallel paths live here behind the single
 //! `run_hook` entry point. Parallel scheduling is priority-aware
 //! (directly fixing lefthook #846): jobs are lowered into priority
-//! order in phase 2, and the scheduler spawns them in that order against
+//! order, and the scheduler spawns them in that order against
 //! a tokio Semaphore so higher-priority jobs always acquire their permit
 //! first when there is contention.
 
@@ -54,8 +54,8 @@ struct ResolvedJob {
 struct JobPlan {
     commands: Vec<String>,
     cwd: PathBuf,
-    /// Files the job would operate on after `glob` + `exclude` filter.
-    /// Phase 30 uses this as the content-hash input for the CA cache.
+    /// Files the job would operate on after `glob` and `exclude`
+    /// filtering. Used as the content input for cache keys.
     files: Vec<PathBuf>,
 }
 
@@ -251,9 +251,7 @@ async fn acquire_repo_stash_lock(common_dir: &Path) -> RunResult<crate::lock::Fi
 }
 
 /// Per-hook execution state shared across the sequential and parallel
-/// schedulers. Introduced in v1.0.1 to replace the seven-argument
-/// `run_sequential` / `run_parallel` signatures — both schedulers were
-/// passing the same bag of context through every recursion level.
+/// schedulers.
 struct ExecutionContext<'a> {
     hook: &'a Hook,
     tx: &'a mpsc::Sender<OutputEvent>,
@@ -324,17 +322,13 @@ async fn run_sequential(
     })
 }
 
-/// Parallel (capability-DAG-aware) executor.
-///
-/// Phase 27 replaces the priority-only spawn-and-semaphore scheduler
-/// with a DAG walker that respects declared `reads`/`writes`/`network`
-/// capabilities. Jobs whose capability sets are disjoint run in
-/// parallel; jobs that conflict serialize in a priority-ordered way.
+/// Parallel executor driven by the capability DAG. Jobs whose
+/// capability sets are disjoint run in parallel; conflicting jobs
+/// serialize in priority order.
 // The scheduler loop is one cohesive state machine: ready heap,
 // join-set drain, DAG child release, fail-fast cascade. Splitting
 // further would spread mutable local state across functions and hurt
-// readability more than it helps. v1.0.1 brought it down from 243
-// lines to ~130 by extracting `execute_job_in_dag` and we stop there.
+// readability more than it helps.
 #[allow(clippy::too_many_lines)]
 async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> RunResult<RunSummary> {
     let limit = ctx
@@ -403,9 +397,9 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
                 continue;
             };
 
-            // Phase 30: CA cache hit path. Only concurrent_safe jobs
-            // are cacheable — unsafe jobs may have side effects that
-            // we can't faithfully replay.
+            // Only `concurrent_safe` jobs are cacheable. Jobs with
+            // side effects must run again so the behavior is real, not
+            // replayed from prior output.
             if job.concurrent_safe {
                 if let Ok(Some(cached)) =
                     crate::cache::lookup(ctx.common_dir, &job, &plan.files).await
@@ -454,9 +448,9 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
         }
 
         if set.is_empty() {
-            // Nothing in flight and nothing ready → we're done (or
-            // stalled, but phase 26 proves the graph is acyclic so
-            // being stalled here means every node finished).
+            // Nothing in flight and nothing ready means every node
+            // has been processed. A true deadlock cannot happen here
+            // because the DAG is acyclic by construction.
             break;
         }
 
@@ -554,11 +548,6 @@ struct SpawnedJobContext {
 /// Run a single DAG node to completion: acquire isolation lock, spawn
 /// the tee channel for cache capture, run every command, apply
 /// `stage_fixed`, and persist the cache entry on success.
-///
-/// Extracted from an inline `set.spawn(async move { ... })` closure in
-/// v1.0.1 — the closure was 85 lines, nested 4 levels deep, and made
-/// panic stack traces unreadable. Moving it to a named `async fn`
-/// doesn't change behavior but is hugely better for debugging.
 async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunError> {
     let SpawnedJobContext {
         job,
@@ -779,11 +768,9 @@ async fn snapshot_unstaged_if_needed(
 /// formatters edit files in-place, and without this step those edits
 /// wouldn't make it into the commit.
 ///
-/// v1.0.1: split into a read phase (runs without `git_lock` — it's
-/// just `git status`, safe concurrently) and a mutation phase (runs
-/// under the lock). Previously the whole function ran under the lock,
-/// which serialized the git-status scans of parallel DAG jobs on each
-/// other for no reason.
+/// The read step runs without `git_lock` because `git diff` is
+/// read-only. The mutation step holds the lock only around `git add`
+/// so parallel jobs do not serialize their status scans.
 async fn apply_stage_fixed(
     worktree: &Path,
     before: &HashSet<PathBuf>,

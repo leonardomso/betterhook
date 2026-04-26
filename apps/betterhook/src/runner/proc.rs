@@ -131,9 +131,9 @@ pub struct CommandSpec<'a> {
 /// Returns the exit code (`-1` on signal, whatever `status.code()` yields,
 /// [`EXIT_TIMEOUT`] on timeout, [`EXIT_CANCELLED`] on cancellation).
 ///
-/// v1.0.1 split the previously 154-line implementation into three
-/// helpers — `spawn_subprocess`, `monitor_child`, `drain_readers` —
-/// plus this short orchestrator.
+/// This thin wrapper keeps the public entry point readable while the
+/// lower-level subprocess, monitor, and reader logic stays in helper
+/// functions below.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_command(
     job_name: &str,

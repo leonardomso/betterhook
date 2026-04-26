@@ -21,9 +21,9 @@ pub struct Status {
     pub worktree: WorktreeInfo,
     pub installed: Option<InstalledInfo>,
     pub config: Option<ConfigInfo>,
-    /// Phase 40: speculative runner snapshot. Read from the sidecar
-    /// the daemon writes at `<common>/betterhook/speculative-stats.json`.
-    /// `None` means the daemon has never run in this repo.
+    /// Snapshot of speculative-runner state read from
+    /// `<common>/betterhook/speculative-stats.json`.
+    /// `None` means the daemon has not written stats for this repo yet.
     #[serde(default)]
     pub speculative: Option<crate::daemon::speculative::SpeculativeStats>,
 }
@@ -76,9 +76,8 @@ pub struct HookInfo {
     pub fail_fast: bool,
     pub stash_untracked: bool,
     pub jobs: Vec<String>,
-    /// Phase 28: resolved DAG summary so agents can see at a glance
-    /// which jobs are roots, how many edges exist, and which pairs
-    /// will serialize.
+    /// Summary of the resolved execution DAG so agents can see which
+    /// jobs start first and which pairs must serialize.
     pub dag: Option<DagSummary>,
 }
 

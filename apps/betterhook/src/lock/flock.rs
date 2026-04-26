@@ -1,8 +1,8 @@
-//! `fs4` advisory-lock fallback used when the daemon can't start.
+//! `fs4` advisory-lock backend for coarse mutual exclusion.
 //!
-//! Same mutex semantics as a `(Tool, name)` daemon lock, but can't
-//! express sharded capacity or tool-path scoping. Phase 15 uses it
-//! whenever `--no-daemon` is set or the spawn retry fails.
+//! It provides one lockfile per key, which matches simple mutex
+//! semantics but cannot express sharded capacity or richer daemon-side
+//! coordination.
 
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};

@@ -128,9 +128,9 @@ pub fn parse_file_list(
 /// objects, each with a `messages` array). Used by both `eslint` and
 /// `oxlint`, which emit identical schemas.
 ///
-/// v1.0.1: switched from `serde_json::Value` walking to typed
-/// `Deserialize` structs. Saves ~1-3 ms per 100 diagnostics because
-/// the JSON tree is no longer allocated as a `Value`.
+/// Uses typed `Deserialize` structs instead of walking a
+/// `serde_json::Value`, which keeps the parser smaller and avoids
+/// allocating an intermediate JSON tree.
 #[must_use]
 pub fn parse_eslint_json(stdout: &str) -> Vec<Diagnostic> {
     let Ok(files) = serde_json::from_str::<Vec<EslintFile>>(stdout) else {

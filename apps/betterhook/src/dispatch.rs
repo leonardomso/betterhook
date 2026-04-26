@@ -127,9 +127,9 @@ pub fn resolve_packages<'a>(config: &'a Config, staged_files: &[PathBuf]) -> Vec
         std::collections::HashMap::with_capacity(packages.len());
     let mut root_bucket: Vec<PathBuf> = Vec::new();
 
-    // v1.0.1: clone each file exactly once — into exactly one bucket —
-    // instead of cloning into a string-keyed map and then re-cloning
-    // the whole vec at output time.
+    // Clone each file into exactly one output bucket. This avoids
+    // building an intermediate string-keyed map and then re-cloning
+    // the vectors during output assembly.
     for file in staged_files {
         let mut matched = false;
         for (idx, pkg) in &packages {
@@ -158,7 +158,7 @@ pub fn resolve_packages<'a>(config: &'a Config, staged_files: &[PathBuf]) -> Vec
 
 /// Pick the right hook for a [`PackageMatch`] on a given name.
 ///
-/// Phase 35 semantics:
+/// Semantics:
 /// - `Root` match → the config's root hook for that name
 /// - `Package` match with no package-level hook → the root hook
 /// - `Package` match with a package-level hook → a **merged** hook
@@ -167,10 +167,9 @@ pub fn resolve_packages<'a>(config: &'a Config, staged_files: &[PathBuf]) -> Vec
 ///   and hook-level flags (`parallel`, `fail_fast`, `priority`, etc.)
 ///   come from the package when declared.
 ///
-/// v1.0.1: returns `Cow<'a, Hook>` so the common "no overlay" path
-/// doesn't clone the whole `Hook` (including every nested `Job`).
-/// Only the merge branch allocates. Saves ~0.5-1 ms per hook on a
-/// config with five jobs.
+/// Returns `Cow<'a, Hook>` so the common "no overlay" path can borrow
+/// the existing hook without cloning every nested job. Only the merge
+/// branch allocates.
 #[must_use]
 pub fn hook_for_match<'a>(
     config: &'a Config,

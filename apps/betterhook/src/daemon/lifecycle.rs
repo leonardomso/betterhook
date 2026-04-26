@@ -1,13 +1,11 @@
 //! Daemon lifecycle: idle-linger timer and per-platform persistent
 //! unit files (launchd plists on macOS, systemd user units on Linux).
 //!
-//! Phase 23 adds unit-file rendering and install/uninstall primitives.
-//! The `betterhook install` command writes the unit file so the
-//! coordinator daemon survives reboots. We deliberately do *not*
-//! invoke `launchctl load` / `systemctl --user enable` automatically —
-//! launchd picks up plists on login and systemd needs explicit user
-//! action. The install command prints platform-specific instructions
-//! for the one-time load step.
+//! The `betterhook install` command writes these unit files so the
+//! coordinator daemon can survive reboots. It deliberately does not
+//! auto-load them: launchd picks up plists on login, and systemd user
+//! units still require an explicit enable/start step. The install
+//! command prints the platform-specific follow-up command instead.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -17,10 +15,9 @@ use sha2::{Digest, Sha256};
 /// How long the daemon keeps running past the last client disconnect
 /// before exiting.
 ///
-/// v0.0.1 shipped with 60 seconds; v1 moves this to 24 hours because
-/// the daemon is now the speculative runner and needs to be alive as
-/// long as at least one worktree is in use. Tests override this via
-/// [`ServeOptions::idle_linger`](crate::daemon::server).
+/// Kept long because the daemon also backs speculative execution and is
+/// useful to keep warm while a repo is actively in use. Tests override
+/// this via [`ServeOptions::idle_linger`](crate::daemon::server).
 pub const IDLE_LINGER: Duration = Duration::from_secs(60 * 60 * 24);
 
 /// Per-platform unit kinds.

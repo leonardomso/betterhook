@@ -3,7 +3,7 @@
 //! The daemon accepts connections on a socket path provided by the
 //! client (or spawner) and serves `Request → Response` frames until
 //! the client disconnects. Exits after [`IDLE_LINGER`] of no active
-//! connections (phase 15 wires that in).
+//! connections.
 
 use std::collections::HashMap;
 use std::path::Path;

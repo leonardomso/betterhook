@@ -7,9 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Bumped whenever a backwards-incompatible change is made.
-/// Phase 15's client pings the daemon and refuses to talk to a
-/// daemon with a different major version.
+/// Bumped whenever a backwards-incompatible change is made. Clients
+/// refuse to talk to daemons with a different version.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// Granularity of a lock key. The client computes the right variant
