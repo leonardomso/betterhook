@@ -289,6 +289,17 @@ mod tests {
     }
 
     #[test]
+    fn edges_returns_exact_parent_child_pairs() {
+        let jobs = vec![
+            job("format", &[], &["**/*.ts"], 0),
+            job("lint", &["**/*.ts"], &[], 1),
+        ];
+        let dag = build_dag(&jobs).unwrap();
+
+        assert_eq!(dag.edges(), vec![(0, 1)]);
+    }
+
+    #[test]
     fn write_write_conflict_serializes_by_priority() {
         let jobs = vec![
             job("fmt1", &[], &["**/*.ts"], 1),
@@ -309,6 +320,14 @@ mod tests {
         ];
         let dag = build_dag(&jobs).unwrap();
         assert_eq!(dag.nodes[0].children, vec![1]);
+    }
+
+    #[test]
+    fn equal_index_never_orders_first_on_tie() {
+        let a = job("same", &[], &["a.txt"], 0);
+        let b = job("same", &[], &["a.txt"], 0);
+
+        assert!(!order_first(&a, 0, &b, 0));
     }
 
     #[test]
