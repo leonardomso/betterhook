@@ -17,7 +17,7 @@ fn job(
     concurrent_safe: bool,
 ) -> Job {
     Job {
-        name: name.to_owned(),
+        name: name.into(),
         run: "true".to_owned(),
         fix: None,
         glob: Vec::new(),

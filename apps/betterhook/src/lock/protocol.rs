@@ -34,6 +34,10 @@ pub struct LockKey {
     pub permits: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct LockToken(pub u64);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
     /// Identify protocol version before issuing real requests.
@@ -41,7 +45,7 @@ pub enum Request {
     /// Block until a permit on `key` is free, up to `timeout_ms`.
     Acquire { key: LockKey, timeout_ms: u64 },
     /// Release the permit identified by `token`. Idempotent.
-    Release { token: u64 },
+    Release { token: LockToken },
     /// Snapshot of every live lock. Used by `betterhook status`.
     Status,
     /// Liveness check.
@@ -51,7 +55,7 @@ pub enum Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
     Hello { server_version: u32 },
-    Granted { token: u64 },
+    Granted { token: LockToken },
     Timeout,
     Released,
     Pong,
@@ -118,11 +122,13 @@ mod tests {
 
     #[test]
     fn round_trip_response() {
-        let resp = Response::Granted { token: 42 };
+        let resp = Response::Granted {
+            token: LockToken(42),
+        };
         let frame = encode_frame(&resp).unwrap();
         let decoded: Response = decode_frame(&frame[4..]).unwrap();
         match decoded {
-            Response::Granted { token } => assert_eq!(token, 42),
+            Response::Granted { token } => assert_eq!(token, LockToken(42)),
             _ => panic!(),
         }
     }

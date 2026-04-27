@@ -11,29 +11,14 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::{self, Config, Hook, Package};
+use crate::config::{self, Config, Hook, HookName, Package};
 use crate::error::ConfigResult;
-
-/// Candidate config filenames, in lookup order. First match wins.
-pub const CONFIG_CANDIDATES: &[&str] = &[
-    "betterhook.toml",
-    "betterhook.yml",
-    "betterhook.yaml",
-    "betterhook.json",
-    "betterhook.kdl",
-];
 
 /// Find the first `betterhook.*` config file in `worktree`. Returns
 /// `None` if no candidate exists.
 #[must_use]
 pub fn find_config(worktree: &Path) -> Option<PathBuf> {
-    for name in CONFIG_CANDIDATES {
-        let candidate = worktree.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+    config::find_config_path(worktree)
 }
 
 /// Outcome of resolving a dispatch invocation.
@@ -45,7 +30,7 @@ pub enum Dispatch {
     /// Config exists and has the hook, but with zero jobs.
     NoJobs,
     /// Ready to execute.
-    Run { config: Config, hook_name: String },
+    Run { config: Config, hook_name: HookName },
 }
 
 impl Dispatch {
@@ -53,7 +38,7 @@ impl Dispatch {
     #[must_use]
     pub fn hook(&self) -> Option<&Hook> {
         match self {
-            Self::Run { config, hook_name } => config.hooks.get(hook_name),
+            Self::Run { config, hook_name } => config.hooks.get(hook_name.as_str()),
             _ => None,
         }
     }
@@ -97,7 +82,7 @@ pub fn resolve(worktree: &Path, hook_name: &str) -> ConfigResult<Dispatch> {
     }
     Ok(Dispatch::Run {
         config,
-        hook_name: hook_name.to_owned(),
+        hook_name: hook_name.into(),
     })
 }
 
@@ -241,13 +226,13 @@ fn merge_hooks(base: &Hook, overlay: &Hook) -> Hook {
 #[cfg(test)]
 mod hook_merge_tests {
     use super::*;
-    use crate::config::{IsolateSpec, Job, Package};
+    use crate::config::{IsolateSpec, Job, Package, PackageName};
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     fn mk_job(name: &str, priority: u32) -> Job {
         Job {
-            name: name.to_owned(),
+            name: name.into(),
             run: "true".to_owned(),
             fix: None,
             glob: Vec::new(),
@@ -273,7 +258,7 @@ mod hook_merge_tests {
 
     fn mk_hook(name: &str, jobs: Vec<Job>) -> Hook {
         Hook {
-            name: name.to_owned(),
+            name: name.into(),
             parallel: false,
             parallel_explicit: false,
             fail_fast: false,
@@ -288,18 +273,18 @@ mod hook_merge_tests {
     fn mk_config(root_hooks: Vec<Hook>, pkgs: Vec<(String, &str, Vec<Hook>)>) -> Config {
         let mut hooks = BTreeMap::new();
         for h in root_hooks {
-            hooks.insert(h.name.clone(), h);
+            hooks.insert(h.name.to_string(), h);
         }
         let mut packages = BTreeMap::new();
         for (name, path, hooks_vec) in pkgs {
             let mut pkg_hooks = BTreeMap::new();
             for h in hooks_vec {
-                pkg_hooks.insert(h.name.clone(), h);
+                pkg_hooks.insert(h.name.to_string(), h);
             }
             packages.insert(
                 name.clone(),
                 Package {
-                    name,
+                    name: PackageName::from(name),
                     path: PathBuf::from(path),
                     hooks: pkg_hooks,
                 },
@@ -348,7 +333,7 @@ mod hook_merge_tests {
         );
         let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
         assert_eq!(merged.jobs.len(), 1);
-        assert_eq!(merged.jobs[0].name, "lint");
+        assert_eq!(merged.jobs[0].name.as_str(), "lint");
     }
 
     #[test]
@@ -364,7 +349,7 @@ mod hook_merge_tests {
         );
         let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
         assert_eq!(merged.jobs.len(), 1);
-        assert_eq!(merged.jobs[0].name, "scoped");
+        assert_eq!(merged.jobs[0].name.as_str(), "scoped");
     }
 
     #[test]
@@ -434,7 +419,7 @@ mod hook_merge_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Package;
+    use crate::config::{Package, PackageName};
     use std::collections::BTreeMap;
     use tempfile::tempdir;
 
@@ -444,7 +429,7 @@ mod tests {
             packages.insert(
                 name.clone(),
                 Package {
-                    name,
+                    name: PackageName::from(name),
                     path: PathBuf::from(path),
                     hooks: BTreeMap::new(),
                 },
@@ -506,7 +491,7 @@ mod tests {
         .unwrap();
         let out = resolve(dir.path(), "pre-commit").unwrap();
         match out {
-            Dispatch::Run { hook_name, .. } => assert_eq!(hook_name, "pre-commit"),
+            Dispatch::Run { hook_name, .. } => assert_eq!(hook_name.as_str(), "pre-commit"),
             _ => panic!("expected Dispatch::Run"),
         }
     }
@@ -528,7 +513,7 @@ mod tests {
         .unwrap();
         let out = resolve(dir.path(), "pre-commit").unwrap();
         let hook = out.hook().expect("run dispatch should expose hook");
-        assert_eq!(hook.name, "pre-commit");
+        assert_eq!(hook.name.as_str(), "pre-commit");
         assert_eq!(hook.jobs.len(), 1);
         assert!(!out.is_noop());
     }
@@ -586,7 +571,7 @@ mod tests {
         }
         match &matches[1] {
             PackageMatch::Package(pkg, files) => {
-                assert_eq!(pkg.name, "frontend");
+                assert_eq!(pkg.name.as_str(), "frontend");
                 assert_eq!(files, &vec![PathBuf::from("apps/web/src/app.ts")]);
             }
             PackageMatch::Root(_) => panic!("expected package bucket second"),

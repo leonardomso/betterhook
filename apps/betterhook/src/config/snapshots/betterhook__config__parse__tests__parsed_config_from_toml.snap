@@ -1,5 +1,6 @@
 ---
 source: apps/betterhook/src/config/parse.rs
+assertion_line: 214
 expression: config
 ---
 Config {
@@ -9,7 +10,9 @@ Config {
     },
     hooks: {
         "pre-commit": Hook {
-            name: "pre-commit",
+            name: HookName(
+                "pre-commit",
+            ),
             parallel: true,
             parallel_explicit: true,
             fail_fast: false,
@@ -19,7 +22,9 @@ Config {
             stash_untracked_explicit: false,
             jobs: [
                 Job {
-                    name: "lint",
+                    name: JobName(
+                        "lint",
+                    ),
                     run: "eslint --cache --fix {staged_files}",
                     fix: None,
                     glob: [
@@ -51,7 +56,9 @@ Config {
                     builtin: None,
                 },
                 Job {
-                    name: "test",
+                    name: JobName(
+                        "test",
+                    ),
                     run: "cargo test --quiet",
                     fix: None,
                     glob: [],

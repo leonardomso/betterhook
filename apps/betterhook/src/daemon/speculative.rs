@@ -18,7 +18,7 @@ use crate::runner::glob_util::build_globset_always;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::config::{Config, Hook, Job};
+use crate::config::{Config, Hook, HookName, Job};
 
 use super::watcher::WatcherEvent;
 
@@ -87,7 +87,7 @@ pub struct SpeculativeTask {
     /// Absolute path of the file that changed and triggered this task.
     pub file: PathBuf,
     /// Hook name (usually `pre-commit`) whose jobs should prewarm.
-    pub hook_name: String,
+    pub hook_name: HookName,
     /// Jobs to run against `file`. Only `concurrent_safe` jobs are
     /// ever emitted here.
     pub jobs: Vec<Job>,
@@ -97,7 +97,7 @@ pub struct SpeculativeTask {
 /// pay the globset build cost once per config load.
 pub struct HookMatcher {
     /// Hook name this matcher belongs to.
-    pub hook_name: String,
+    pub hook_name: HookName,
     /// `(job, compiled_include_globset)` for every `concurrent_safe`
     /// job in the hook.
     pub jobs: Vec<(Job, GlobSet)>,
@@ -278,7 +278,7 @@ mod tests {
 
     fn mk_job(name: &str, glob: Vec<&str>, concurrent_safe: bool) -> Job {
         Job {
-            name: name.to_owned(),
+            name: name.into(),
             run: "true".to_owned(),
             fix: None,
             glob: glob.into_iter().map(str::to_owned).collect(),
@@ -304,7 +304,7 @@ mod tests {
 
     fn mk_hook(name: &str, jobs: Vec<Job>) -> Hook {
         Hook {
-            name: name.to_owned(),
+            name: name.into(),
             parallel: false,
             parallel_explicit: false,
             fail_fast: false,
@@ -318,7 +318,7 @@ mod tests {
 
     fn mk_config(root: Hook) -> Config {
         let mut hooks = BTreeMap::new();
-        hooks.insert(root.name.clone(), root);
+        hooks.insert(root.name.to_string(), root);
         Config {
             meta: Meta {
                 version: 1,
@@ -340,7 +340,7 @@ mod tests {
         );
         let m = HookMatcher::from_hook(&hook).unwrap();
         assert_eq!(m.jobs.len(), 1);
-        assert_eq!(m.jobs[0].0.name, "lint-safe");
+        assert_eq!(m.jobs[0].0.name.as_str(), "lint-safe");
     }
 
     #[test]
@@ -396,6 +396,6 @@ mod tests {
         };
         let tasks = spec.handle_event(event);
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].jobs[0].name, "lint");
+        assert_eq!(tasks[0].jobs[0].name.as_str(), "lint");
     }
 }

@@ -151,36 +151,12 @@ async fn find_stash_index(worktree: &Path, needle: &str) -> GitResult<Option<usi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::new_git_repo_with_file;
     use std::process::Command as StdCommand;
-    use tempfile::TempDir;
-
-    fn new_git_repo() -> (TempDir, PathBuf) {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path().to_path_buf();
-        let git = |args: &[&str]| {
-            let s = StdCommand::new("git")
-                .current_dir(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t.t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t.t")
-                .status()
-                .unwrap();
-            assert!(s.success());
-        };
-        git(&["init", "-q", "-b", "main"]);
-        git(&["config", "user.email", "t@t.t"]);
-        git(&["config", "user.name", "t"]);
-        std::fs::write(root.join("a.ts"), "one\n").unwrap();
-        git(&["add", "."]);
-        git(&["commit", "-q", "-m", "init"]);
-        (dir, root)
-    }
 
     #[tokio::test]
     async fn clean_tree_stash_is_noop() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
         let guard = StashGuard::push(&root).await.unwrap();
         assert!(!guard.created());
         guard.pop().await.unwrap();
@@ -188,7 +164,7 @@ mod tests {
 
     #[tokio::test]
     async fn untracked_file_is_stashed_and_restored() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
         std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
         assert!(root.join("scratch.log").exists());
 
@@ -217,7 +193,7 @@ mod tests {
 
     #[tokio::test]
     async fn tracked_dirty_file_is_stashed_and_restored() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
         std::fs::write(root.join("a.ts"), "dirty\n").unwrap();
 
         let guard = StashGuard::push(&root).await.unwrap();
@@ -234,7 +210,7 @@ mod tests {
 
     #[tokio::test]
     async fn pop_refuses_when_stash_disappears() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
         std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
         let guard = StashGuard::push(&root).await.unwrap();
         assert!(guard.created());
@@ -255,7 +231,7 @@ mod tests {
 
     #[tokio::test]
     async fn pop_refuses_when_our_stash_is_not_on_top() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
         std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
         let guard = StashGuard::push(&root).await.unwrap();
         assert!(guard.created());
@@ -287,7 +263,7 @@ mod tests {
 
     #[tokio::test]
     async fn partially_staged_tracked_file_is_rejected() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
         std::fs::write(root.join("a.ts"), "staged\n").unwrap();
         StdCommand::new("git")
             .current_dir(&root)

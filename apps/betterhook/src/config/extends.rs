@@ -164,7 +164,7 @@ timeout = "2m"
         let merged = resolve(&main).unwrap();
         let lowered = merged.lower().unwrap();
         let lint = &lowered.hooks["pre-commit"].jobs[0];
-        assert_eq!(lint.name, "lint");
+        assert_eq!(lint.name.as_str(), "lint");
         assert_eq!(lint.run, "eslint {staged_files}"); // inherited from base
         assert_eq!(lint.timeout, Some(std::time::Duration::from_mins(2)));
     }

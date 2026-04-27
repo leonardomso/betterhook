@@ -559,7 +559,38 @@ async fn uninstall_removes_manifest() {
 }
 
 // ---------------------------------------------------------------------------
-// 17. install_manifest_contains_hook_entries
+// 17. install_autodiscovers_yaml_config
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn install_autodiscovers_yaml_config() {
+    let (_d, repo) = init_repo();
+    std::fs::write(
+        repo.join("betterhook.yml"),
+        r#"hooks:
+  pre-commit:
+    jobs:
+      lint:
+        run: "echo lint"
+"#,
+    )
+    .unwrap();
+
+    let report = install(InstallOptions {
+        worktree: Some(repo.clone()),
+        skip_unit: true,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let common = git_common_dir(&repo).await.unwrap();
+    assert_eq!(report.installed, vec!["pre-commit".to_string()]);
+    assert!(common.join("hooks").join("pre-commit").is_file());
+}
+
+// ---------------------------------------------------------------------------
+// 18. install_manifest_contains_hook_entries
 // ---------------------------------------------------------------------------
 
 #[tokio::test]

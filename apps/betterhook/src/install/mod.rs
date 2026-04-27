@@ -121,13 +121,10 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
     let config_path = opts
         .config_path
         .clone()
+        .or_else(|| crate::config::find_config_path(&worktree))
         .unwrap_or_else(|| worktree.join("betterhook.toml"));
 
-    let config =
-        crate::config::load(&config_path).map_err(|source| InstallError::ConfigMissing {
-            path: config_path.clone(),
-            source: Box::new(source),
-        })?;
+    let config = load_config_async(&config_path).await?;
 
     let common_dir = crate::git::git_common_dir(&worktree).await?;
 
@@ -141,9 +138,7 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
     }
 
     let hooks_dir = common_dir.join("hooks");
-    ensure_dir(&hooks_dir)?;
-
-    let bin = current_exe_path()?;
+    let bin = current_exe_path_async().await?;
     let bin_str = bin.display().to_string();
 
     let hook_types: Vec<String> = opts
@@ -151,10 +146,33 @@ pub async fn install(opts: InstallOptions) -> InstallResult<InstallReport> {
         .clone()
         .unwrap_or_else(|| config.hooks.keys().cloned().collect());
 
-    let (installed_shas, installed_order) = write_wrappers(&hooks_dir, &bin_str, &hook_types)?;
-
-    let (manifest_path, unit) =
-        write_installation_metadata(&common_dir, &bin, &bin_str, &opts, installed_shas)?;
+    let hooks_dir_for_blocking = hooks_dir.clone();
+    let common_dir_for_blocking = common_dir.clone();
+    let bin_for_blocking = bin.clone();
+    let bin_str_for_blocking = bin_str.clone();
+    let opts_for_blocking = opts.clone();
+    let hook_types_for_blocking = hook_types.clone();
+    let (manifest_path, unit, installed_order) = tokio::task::spawn_blocking(move || {
+        ensure_dir(&hooks_dir_for_blocking)?;
+        let (installed_shas, installed_order) = write_wrappers(
+            &hooks_dir_for_blocking,
+            &bin_str_for_blocking,
+            &hook_types_for_blocking,
+        )?;
+        let (manifest_path, unit) = write_installation_metadata(
+            &common_dir_for_blocking,
+            &bin_for_blocking,
+            &bin_str_for_blocking,
+            &opts_for_blocking,
+            installed_shas,
+        )?;
+        Ok::<_, InstallError>((manifest_path, unit, installed_order))
+    })
+    .await
+    .map_err(|source| InstallError::Io {
+        path: hooks_dir.clone(),
+        source: std::io::Error::other(format!("install task failed: {source}")),
+    })??;
 
     Ok(InstallReport {
         common_dir,
@@ -232,12 +250,71 @@ fn write_installation_metadata(
 pub async fn uninstall(worktree: Option<PathBuf>) -> InstallResult<UninstallReport> {
     let worktree = worktree.unwrap_or_else(|| PathBuf::from("."));
     let common_dir = crate::git::git_common_dir(&worktree).await?;
-    let manifest_path = common_dir.join("betterhook").join(MANIFEST_FILENAME);
+    let common_dir_for_blocking = common_dir.clone();
+    tokio::task::spawn_blocking(move || uninstall_blocking(&common_dir_for_blocking))
+        .await
+        .map_err(|source| InstallError::Io {
+            path: common_dir.clone(),
+            source: std::io::Error::other(format!("uninstall task failed: {source}")),
+        })?
+}
 
+// ============================================================================
+// Helpers
+// ============================================================================
+
+async fn get_core_hooks_path(cwd: &Path) -> InstallResult<Option<PathBuf>> {
+    match crate::git::run_git(cwd, ["config", "--get", "core.hooksPath"]).await {
+        Ok(bytes) => {
+            let s = String::from_utf8_lossy(&bytes).trim().to_string();
+            if s.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(PathBuf::from(s)))
+            }
+        }
+        Err(GitError::NonZero { status: 1, .. }) => Ok(None), // exit 1 = key not set
+        Err(e) => Err(InstallError::Git(e)),
+    }
+}
+
+async fn unset_core_hooks_path(cwd: &Path) -> InstallResult<()> {
+    crate::git::run_git(cwd, ["config", "--unset", "core.hooksPath"]).await?;
+    Ok(())
+}
+
+async fn load_config_async(path: &Path) -> InstallResult<crate::config::Config> {
+    let path = path.to_path_buf();
+    let task_path = path.clone();
+    tokio::task::spawn_blocking(move || {
+        let error_path = task_path.clone();
+        crate::config::load(&task_path).map_err(|source| InstallError::ConfigMissing {
+            path: error_path,
+            source: Box::new(source),
+        })
+    })
+    .await
+    .map_err(|source| InstallError::Io {
+        path: path.clone(),
+        source: std::io::Error::other(format!("config load task failed: {source}")),
+    })?
+}
+
+async fn current_exe_path_async() -> InstallResult<PathBuf> {
+    tokio::task::spawn_blocking(current_exe_path)
+        .await
+        .map_err(|source| InstallError::Io {
+            path: PathBuf::from("<current_exe>"),
+            source: std::io::Error::other(format!("current_exe task failed: {source}")),
+        })?
+}
+
+fn uninstall_blocking(common_dir: &Path) -> InstallResult<UninstallReport> {
+    let manifest_path = common_dir.join("betterhook").join(MANIFEST_FILENAME);
     let manifest = read_manifest(&manifest_path).map_err(|err| match err {
         InstallError::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound => {
             InstallError::NotInstalled {
-                common_dir: common_dir.clone(),
+                common_dir: common_dir.to_path_buf(),
                 manifest: MANIFEST_FILENAME.to_string(),
             }
         }
@@ -278,50 +355,19 @@ pub async fn uninstall(worktree: Option<PathBuf>) -> InstallResult<UninstallRepo
         }
     }
 
-    // Tear down the launchd/systemd unit if we wrote one.
     if let Some(unit_path) = &manifest.unit_path {
-        match crate::daemon::lifecycle::uninstall_unit(unit_path) {
-            Ok(_removed) => {}
-            Err(source) => {
-                return Err(InstallError::Io {
-                    path: unit_path.clone(),
-                    source,
-                });
-            }
-        }
+        crate::daemon::lifecycle::uninstall_unit(unit_path).map_err(|source| InstallError::Io {
+            path: unit_path.clone(),
+            source,
+        })?;
     }
 
-    // Remove the manifest last.
     std::fs::remove_file(&manifest_path).map_err(|source| InstallError::Io {
         path: manifest_path.clone(),
         source,
     })?;
 
     Ok(UninstallReport { removed, skipped })
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-async fn get_core_hooks_path(cwd: &Path) -> InstallResult<Option<PathBuf>> {
-    match crate::git::run_git(cwd, ["config", "--get", "core.hooksPath"]).await {
-        Ok(bytes) => {
-            let s = String::from_utf8_lossy(&bytes).trim().to_string();
-            if s.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(PathBuf::from(s)))
-            }
-        }
-        Err(GitError::NonZero { status: 1, .. }) => Ok(None), // exit 1 = key not set
-        Err(e) => Err(InstallError::Git(e)),
-    }
-}
-
-async fn unset_core_hooks_path(cwd: &Path) -> InstallResult<()> {
-    crate::git::run_git(cwd, ["config", "--unset", "core.hooksPath"]).await?;
-    Ok(())
 }
 
 fn ensure_dir(p: &Path) -> InstallResult<()> {
@@ -382,32 +428,8 @@ fn current_exe_path() -> InstallResult<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::new_git_repo_with_file;
     use std::process::Command as StdCommand;
-    use tempfile::TempDir;
-
-    fn new_git_repo() -> (TempDir, PathBuf) {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path().to_path_buf();
-        let git = |args: &[&str]| {
-            let s = StdCommand::new("git")
-                .current_dir(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t.t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t.t")
-                .status()
-                .unwrap();
-            assert!(s.success());
-        };
-        git(&["init", "-q", "-b", "main"]);
-        git(&["config", "user.email", "t@t.t"]);
-        git(&["config", "user.name", "t"]);
-        std::fs::write(root.join("README.md"), "hi").unwrap();
-        git(&["add", "README.md"]);
-        git(&["commit", "-q", "-m", "init"]);
-        (dir, root)
-    }
 
     fn write_minimal_config(root: &Path) {
         std::fs::write(
@@ -425,7 +447,7 @@ run = "true"
 
     #[tokio::test]
     async fn install_creates_wrapper_and_manifest() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("README.md", "hi");
         write_minimal_config(&root);
 
         let report = install(InstallOptions {
@@ -451,7 +473,7 @@ run = "true"
 
     #[tokio::test]
     async fn reinstall_is_idempotent() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("README.md", "hi");
         write_minimal_config(&root);
 
         let first = install(InstallOptions {
@@ -477,7 +499,7 @@ run = "true"
 
     #[tokio::test]
     async fn uninstall_removes_only_managed_wrappers() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("README.md", "hi");
         write_minimal_config(&root);
 
         install(InstallOptions {
@@ -504,7 +526,7 @@ run = "true"
 
     #[tokio::test]
     async fn uninstall_refuses_to_touch_user_modified_hook() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("README.md", "hi");
         write_minimal_config(&root);
 
         let report = install(InstallOptions {
@@ -529,7 +551,7 @@ run = "true"
 
     #[tokio::test]
     async fn install_refuses_foreign_core_hooks_path() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("README.md", "hi");
         write_minimal_config(&root);
         let status = StdCommand::new("git")
             .current_dir(&root)
@@ -550,7 +572,7 @@ run = "true"
 
     #[tokio::test]
     async fn install_takeover_unsets_foreign_core_hooks_path() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("README.md", "hi");
         write_minimal_config(&root);
         StdCommand::new("git")
             .current_dir(&root)

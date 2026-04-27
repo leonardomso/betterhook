@@ -126,7 +126,7 @@ command = "cargo test"
         let lint = hook
             .jobs
             .iter()
-            .find(|j| j.name == "lint")
+            .find(|j| j.name.as_str() == "lint")
             .expect("lint job exists");
         assert!(lint.run.contains("eslint"));
         assert!(report.notes.iter().any(|n| n.contains("hk.toml")));

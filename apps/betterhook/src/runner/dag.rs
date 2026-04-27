@@ -118,10 +118,10 @@ pub fn build_dag(jobs: &[Job]) -> DagResult<JobGraph> {
     let mut writes_sets: Vec<Option<GlobSet>> = Vec::with_capacity(nodes.len());
     let mut reads_or_writes_sets: Vec<Option<GlobSet>> = Vec::with_capacity(nodes.len());
     for node in &nodes {
-        writes_sets.push(build_globset(&node.job.name, &node.job.writes)?);
+        writes_sets.push(build_globset(node.job.name.as_str(), &node.job.writes)?);
         let mut combined: Vec<String> = node.job.reads.clone();
         combined.extend(node.job.writes.clone());
-        reads_or_writes_sets.push(build_globset(&node.job.name, &combined)?);
+        reads_or_writes_sets.push(build_globset(node.job.name.as_str(), &combined)?);
     }
 
     for a_idx in 0..nodes.len() {
@@ -239,7 +239,7 @@ mod tests {
 
     fn job(name: &str, reads: &[&str], writes: &[&str], priority: u32) -> Job {
         Job {
-            name: name.to_owned(),
+            name: name.into(),
             run: "true".to_owned(),
             fix: None,
             glob: Vec::new(),

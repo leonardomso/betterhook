@@ -14,6 +14,8 @@ Emits a pretty-printed JSON document describing:
 - Installed hooks — which exist, their expected SHA, whether the file on disk matches
 - The resolved config — which hook types are declared, which jobs each has
 - The betterhook version that produced the install
+- Any non-fatal inspection failures in `diagnostics` (for example a corrupt
+  install manifest or unreadable speculative stats sidecar)
 
 Designed as the first call an agent makes after landing in a repo.
 
@@ -58,7 +60,8 @@ Designed as the first call an agent makes after landing in a repo.
         "jobs": ["fmt", "lint", "test"]
       }
     ]
-  }
+  },
+  "diagnostics": []
 }
 ```
 
@@ -87,6 +90,10 @@ betterhook status | jq -r '.installed.betterhook_bin'
 When the worktree has no config, `config` is `null`. When it has no install,
 `installed` is `null`. Agents can use those checks to drive onboarding flows
 (e.g. "this repo doesn't have betterhook installed — prompt the user").
+
+If one part of the snapshot can't be read, `status` still returns the rest of
+the document and records the failure in `diagnostics` instead of aborting the
+whole command.
 
 ## See also
 

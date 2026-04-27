@@ -219,7 +219,7 @@ mod tests {
             env_map.insert((*k).to_owned(), (*v).to_owned());
         }
         Job {
-            name: "lint".to_owned(),
+            name: "lint".into(),
             run: run.to_owned(),
             fix: None,
             glob: Vec::new(),

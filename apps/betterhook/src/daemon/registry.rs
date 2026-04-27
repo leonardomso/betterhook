@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
-use crate::lock::protocol::{LockKey, LockStatus};
+use crate::lock::protocol::{LockKey, LockStatus, LockToken};
 
 /// Shared registry handed to every connection handler.
 #[derive(Debug, Default, Clone)]
@@ -71,7 +71,7 @@ impl Registry {
 #[derive(Debug)]
 pub struct HeldPermit {
     #[allow(dead_code)]
-    pub token: u64,
+    pub token: LockToken,
     // Dropping the permit releases the slot in the semaphore.
     #[allow(dead_code)]
     pub permit: OwnedSemaphorePermit,

@@ -217,39 +217,12 @@ fn parse_worktree_porcelain(text: &str) -> GitResult<Vec<WorktreeInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::new_git_repo_with_file;
     use std::process::Command as StdCommand;
-    use tempfile::TempDir;
-
-    /// Initialize a fresh git repo in a temp dir with one commit so
-    /// `git worktree add` works. Returns the tempdir handle (which owns
-    /// the files) and the absolute repo path.
-    fn new_git_repo() -> (TempDir, PathBuf) {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path().to_path_buf();
-        let git = |args: &[&str]| {
-            let status = StdCommand::new("git")
-                .current_dir(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t.t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t.t")
-                .status()
-                .unwrap();
-            assert!(status.success(), "git {args:?} failed");
-        };
-        git(&["init", "-q", "-b", "main"]);
-        git(&["config", "user.email", "t@t.t"]);
-        git(&["config", "user.name", "t"]);
-        std::fs::write(root.join("README.md"), "hi\n").unwrap();
-        git(&["add", "README.md"]);
-        git(&["commit", "-q", "-m", "init"]);
-        (dir, root)
-    }
 
     #[tokio::test]
     async fn rev_parse_primary_worktree() {
-        let (_dir, root) = new_git_repo();
+        let (_dir, root) = new_git_repo_with_file("README.md", "hi\n");
 
         let toplevel = show_toplevel(&root).await.unwrap();
         // macOS tempdirs can be under /private/var/... symlink
@@ -266,7 +239,7 @@ mod tests {
 
     #[tokio::test]
     async fn worktree_list_shows_primary() {
-        let (_dir, root) = new_git_repo();
+        let (_dir, root) = new_git_repo_with_file("README.md", "hi\n");
         let wts = worktrees(&root).await.unwrap();
         assert_eq!(wts.len(), 1);
         assert_eq!(wts[0].branch.as_deref(), Some("refs/heads/main"));
@@ -274,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn linked_worktree_shares_common_dir_but_has_own_git_dir() {
-        let (dir, root) = new_git_repo();
+        let (dir, root) = new_git_repo_with_file("README.md", "hi\n");
         let linked = dir.path().join("wt-a");
         let status = StdCommand::new("git")
             .current_dir(&root)

@@ -7,7 +7,7 @@
 //! a tokio Semaphore so higher-priority jobs always acquire their permit
 //! first when there is contention.
 
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -18,19 +18,16 @@ use tokio::task::JoinSet;
 use super::RunError;
 use super::RunResult;
 use super::dag::{JobGraph, build_dag};
+use super::diagnostics::emit_builtin_diagnostics;
 use super::output::{OutputEvent, SinkKind, sink};
+use super::plan::{JobPlan, ResolvedJob, default_parallel_limit, resolve_job_plan};
 use super::proc::{Cancel, run_command};
-use crate::config::{Hook, Job};
-use crate::git::{
-    StashGuard, all_files, build_globset, expand_template, filter_files, has_template, push_files,
-    run_git, staged_files, unstaged_files,
+use super::stage::{
+    GitIndexLock, acquire_if_isolated, acquire_repo_stash_lock, apply_stage_fixed,
+    snapshot_unstaged_if_needed,
 };
-use crate::lock::{LockGuard, acquire_job_lock};
-
-/// Async mutex that serializes `git add` / `git stash` / other index
-/// operations across parallel jobs so concurrent writes to `.git/index`
-/// don't trip the built-in `index.lock`.
-type GitIndexLock = Arc<Mutex<()>>;
+use crate::config::{Hook, Job};
+use crate::git::StashGuard;
 
 /// Summary of a hook run, returned to the CLI for exit-code mapping.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,28 +37,6 @@ pub struct ExecutionReport {
     pub jobs_run: usize,
     pub jobs_skipped: usize,
     pub duration_ms: u128,
-}
-
-/// Resolved per-job plan: the commands to run (already template-expanded
-/// and chunked) plus the cwd and extra env bag. `None` means the job
-/// had a template but no files matched and we should emit `JobSkipped`.
-struct ResolvedJob {
-    job: Job,
-    plan: Option<JobPlan>,
-}
-
-#[derive(Clone)]
-struct JobPlan {
-    commands: Vec<String>,
-    cwd: PathBuf,
-    /// Files the job would operate on after `glob` and `exclude`
-    /// filtering. Used as the content input for cache keys.
-    files: Vec<PathBuf>,
-}
-
-/// Default parallel limit when the hook doesn't specify one.
-fn default_parallel_limit() -> usize {
-    std::thread::available_parallelism().map_or(4, std::num::NonZero::get)
 }
 
 /// Runtime filters applied to the hook's job list before execution.
@@ -155,10 +130,10 @@ pub async fn run_hook_with_options(
     let mut resolved: Vec<ResolvedJob> = Vec::with_capacity(hook.jobs.len());
     let mut filtered_out = 0usize;
     for job in &hook.jobs {
-        if options.is_filtered(&job.name) {
+        if options.is_filtered(job.name.as_str()) {
             let _ = tx
                 .send(OutputEvent::JobSkipped {
-                    job: job.name.clone(),
+                    job: job.name.to_string(),
                     reason: "filtered by --skip/--only".to_owned(),
                 })
                 .await;
@@ -220,7 +195,7 @@ pub async fn run_hook_with_options(
     let _ = writer.await;
 
     Ok(ExecutionReport {
-        hook_name: hook.name.clone(),
+        hook_name: hook.name.to_string(),
         ok: report.ok,
         jobs_run: report.jobs_run,
         jobs_skipped,
@@ -233,21 +208,6 @@ struct RunSummary {
     ok: bool,
     jobs_run: usize,
     jobs_skipped: usize,
-}
-
-async fn acquire_repo_stash_lock(common_dir: &Path) -> RunResult<crate::lock::FileLock> {
-    let common_dir = common_dir.to_path_buf();
-    let lock_dir = common_dir.join("betterhook").join("locks");
-    tokio::task::spawn_blocking(move || crate::lock::FileLock::acquire(&common_dir, "repo-stash"))
-        .await
-        .map_err(|source| RunError::Io {
-            path: lock_dir.clone(),
-            source: std::io::Error::other(format!("repo-stash lock task failed: {source}")),
-        })?
-        .map_err(|source| RunError::Io {
-            path: lock_dir,
-            source,
-        })
 }
 
 /// Per-hook execution state shared across the sequential and parallel
@@ -274,7 +234,7 @@ async fn run_sequential(
             let _ = ctx
                 .tx
                 .send(OutputEvent::JobSkipped {
-                    job: rj.job.name.clone(),
+                    job: rj.job.name.to_string(),
                     reason: "no files matched glob".to_owned(),
                 })
                 .await;
@@ -286,11 +246,11 @@ async fn run_sequential(
 
         let (_guard, lock_env) =
             acquire_if_isolated(&rj.job, ctx.common_dir, ctx.worktree, ctx.no_locks, ctx.tx).await;
-        let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), ctx.hook.name.clone())];
+        let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), ctx.hook.name.to_string())];
         extra_env.extend(lock_env);
         for cmd in &plan.commands {
             let exit = run_command(
-                &rj.job.name,
+                rj.job.name.as_str(),
                 cmd,
                 &plan.cwd,
                 &rj.job.env,
@@ -336,7 +296,7 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
         .parallel_limit
         .unwrap_or_else(default_parallel_limit)
         .max(1);
-    let hook_name = ctx.hook.name.clone();
+    let hook_name = ctx.hook.name.to_string();
     let fail_fast = ctx.hook.fail_fast;
 
     // Align plans with the DAG's node indices by reusing the same job
@@ -388,7 +348,7 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
                 let _ = ctx
                     .tx
                     .send(OutputEvent::JobSkipped {
-                        job: job.name.clone(),
+                        job: job.name.to_string(),
                         reason: "no files matched glob".to_owned(),
                     })
                     .await;
@@ -407,7 +367,7 @@ async fn run_parallel(ctx: &ExecutionContext<'_>, jobs: Vec<ResolvedJob>) -> Run
                 let _ = ctx
                     .tx
                     .send(OutputEvent::JobCacheHit {
-                        job: job.name.clone(),
+                        job: job.name.to_string(),
                         files: plan.files.len(),
                     })
                     .await;
@@ -582,7 +542,7 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
     let mut job_failed = false;
     for cmd in &plan.commands {
         let exit = run_command(
-            &job.name,
+            job.name.as_str(),
             cmd,
             &plan.cwd,
             &job.env,
@@ -605,7 +565,7 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
     // what makes `--json` output structured for agents — the raw line
     // stream is augmented with typed file/line/severity diagnostics.
     if let Some(ref builtin_id) = job.builtin {
-        emit_builtin_diagnostics(builtin_id, &job.name, &captured, &tx).await;
+        emit_builtin_diagnostics(builtin_id, job.name.as_str(), &captured, &tx).await;
     }
 
     if let Some(before) = before_unstaged {
@@ -633,229 +593,6 @@ async fn execute_job_in_dag(ctx: SpawnedJobContext) -> Result<JobOutcome, RunErr
     Ok(JobOutcome { failed: job_failed })
 }
 
-/// Collect all stdout/stderr lines from the captured events, feed them
-/// through the builtin's `parse_output`, and emit one `Diagnostic`
-/// event per finding.
-async fn emit_builtin_diagnostics(
-    builtin_id: &str,
-    job_name: &str,
-    captured: &[OutputEvent],
-    tx: &mpsc::Sender<OutputEvent>,
-) {
-    let Some(meta) = crate::builtins::get(builtin_id) else {
-        return;
-    };
-    // Rebuild the raw stdout. The builtin parsers expect the full output
-    // as a single string — they handle line splitting themselves.
-    let mut stdout = String::new();
-    for ev in captured {
-        if let OutputEvent::Line {
-            stream: super::output::Stream::Stdout,
-            line,
-            ..
-        } = ev
-        {
-            stdout.push_str(line);
-            stdout.push('\n');
-        }
-    }
-    if stdout.is_empty() {
-        return;
-    }
-    let diags = match builtin_id {
-        "rustfmt" => crate::builtins::rustfmt::parse_output(&stdout),
-        "clippy" => crate::builtins::clippy::parse_output(&stdout),
-        "prettier" => crate::builtins::prettier::parse_output(&stdout),
-        "eslint" => crate::builtins::eslint::parse_output(&stdout),
-        "ruff" => crate::builtins::ruff::parse_output(&stdout),
-        "black" => crate::builtins::black::parse_output(&stdout),
-        "gofmt" => crate::builtins::gofmt::parse_output(&stdout),
-        "govet" => crate::builtins::govet::parse_output(&stdout),
-        "biome" => crate::builtins::biome::parse_output(&stdout),
-        "oxlint" => crate::builtins::oxlint::parse_output(&stdout),
-        "shellcheck" => crate::builtins::shellcheck::parse_output(&stdout),
-        "gitleaks" => crate::builtins::gitleaks::parse_output(&stdout),
-        _ => return,
-    };
-    // `meta` is a `BuiltinMeta` with no Drop — the `get()` result was
-    // only needed to confirm the builtin exists. Let `_` discard it.
-    let _ = meta;
-    for d in diags {
-        let _ = tx
-            .send(OutputEvent::Diagnostic {
-                job: job_name.to_owned(),
-                file: d.file,
-                line: d.line,
-                column: d.column,
-                severity: d.severity,
-                message: d.message,
-                rule: d.rule,
-            })
-            .await;
-    }
-}
-
-/// If `job` declares an `isolate` spec, acquire the appropriate lock
-/// (flock via the client) and return a guard holding it for the
-/// duration of the job. On `no_locks`, print a one-line warning and
-/// return without locking.
-async fn acquire_if_isolated(
-    job: &Job,
-    common_dir: &Path,
-    worktree: &Path,
-    no_locks: bool,
-    tx: &mpsc::Sender<OutputEvent>,
-) -> (Option<LockGuard>, Vec<(String, String)>) {
-    let Some(spec) = &job.isolate else {
-        return (None, Vec::new());
-    };
-    if no_locks {
-        let _ = tx
-            .send(OutputEvent::JobSkipped {
-                job: job.name.clone(),
-                reason: "BETTERHOOK_NO_LOCKS set — running unlocked".to_owned(),
-            })
-            .await;
-        return (None, Vec::new());
-    }
-    // Move the blocking flock call off the async runtime.
-    let common_dir_owned = common_dir.to_path_buf();
-    let worktree_owned = worktree.to_path_buf();
-    let spec_owned = spec.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        acquire_job_lock(&common_dir_owned, &spec_owned, &worktree_owned)
-    })
-    .await;
-    match result {
-        Ok(Ok(guard)) => {
-            let env = guard.extra_env.clone();
-            (Some(guard), env)
-        }
-        Ok(Err(e)) => {
-            eprintln!(
-                "betterhook: WARNING — failed to acquire lock for job '{}': {e}. running unlocked.",
-                job.name
-            );
-            (None, Vec::new())
-        }
-        Err(e) => {
-            eprintln!(
-                "betterhook: WARNING — lock task panicked for job '{}': {e}. running unlocked.",
-                job.name
-            );
-            (None, Vec::new())
-        }
-    }
-}
-
-/// When the job opts into `stage_fixed`, return the set of files that
-/// already had unstaged modifications before the job ran — the delta
-/// after the job is what we need to re-add.
-async fn snapshot_unstaged_if_needed(
-    job: &Job,
-    worktree: &Path,
-) -> RunResult<Option<HashSet<PathBuf>>> {
-    if !job.stage_fixed || job.interactive {
-        return Ok(None);
-    }
-    let files = unstaged_files(worktree).await?;
-    Ok(Some(files.into_iter().collect()))
-}
-
-/// Stage every file that became unstaged *during* the job — the ones
-/// that weren't dirty before. This is the `stage_fixed` semantics:
-/// formatters edit files in-place, and without this step those edits
-/// wouldn't make it into the commit.
-///
-/// The read step runs without `git_lock` because `git diff` is
-/// read-only. The mutation step holds the lock only around `git add`
-/// so parallel jobs do not serialize their status scans.
-async fn apply_stage_fixed(
-    worktree: &Path,
-    before: &HashSet<PathBuf>,
-    git_lock: &GitIndexLock,
-) -> RunResult<()> {
-    // Read phase: no lock held. `git status --porcelain` never
-    // mutates the index, and two worktrees calling it concurrently is
-    // perfectly safe.
-    let after: HashSet<PathBuf> = unstaged_files(worktree).await?.into_iter().collect();
-    let newly: Vec<PathBuf> = after.difference(before).cloned().collect();
-    if newly.is_empty() {
-        return Ok(());
-    }
-    let mut args: Vec<std::ffi::OsString> = Vec::with_capacity(2 + newly.len());
-    args.push("add".into());
-    args.push("--".into());
-    for p in &newly {
-        args.push(p.as_os_str().to_os_string());
-    }
-    // Write phase: hold the lock only around the `git add`.
-    let _g = git_lock.lock().await;
-    run_git(worktree, args).await?;
-    Ok(())
-}
-
-/// Resolve the plan for one job: file set → filter → template expansion.
-///
-/// Returns `None` when the job has a template but zero files matched,
-/// signaling "skip with reason 'no files matched glob'" to the caller.
-async fn resolve_job_plan(hook: &Hook, job: &Job, worktree: &Path) -> RunResult<Option<JobPlan>> {
-    let cwd = job
-        .root
-        .as_ref()
-        .map_or_else(|| worktree.to_path_buf(), |r| worktree.join(r));
-
-    if !has_template(&job.run) && job.glob.is_empty() && job.exclude.is_empty() {
-        return Ok(Some(JobPlan {
-            commands: vec![job.run.clone()],
-            cwd,
-            files: Vec::new(),
-        }));
-    }
-
-    let raw = if job.run.contains("{all_files}") {
-        all_files(worktree).await?
-    } else if job.run.contains("{push_files}") || hook.name == "pre-push" {
-        match push_files(worktree, "HEAD~1").await {
-            Ok(files) => files,
-            Err(_) => all_files(worktree).await?,
-        }
-    } else {
-        staged_files(worktree).await?
-    };
-
-    let include = build_globset(&job.glob)?;
-    let exclude = build_globset(&job.exclude)?;
-    let files = filter_files(raw, include.as_ref(), exclude.as_ref());
-
-    if has_template(&job.run) && files.is_empty() {
-        return Ok(None);
-    }
-
-    let commands = if has_template(&job.run) {
-        expand_template(&job.run, &files)
-    } else {
-        vec![job.run.clone()]
-    };
-    // Store absolute paths so the cache can hash them regardless of
-    // which cwd the runner later changes to.
-    let abs_files: Vec<PathBuf> = files
-        .iter()
-        .map(|p| {
-            if p.is_absolute() {
-                p.clone()
-            } else {
-                worktree.join(p)
-            }
-        })
-        .collect();
-    Ok(Some(JobPlan {
-        commands,
-        cwd,
-        files: abs_files,
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -863,37 +600,17 @@ mod tests {
     use crate::config::ToolPathScope;
     use crate::git::GitError;
     use crate::runner::output::Stream;
+    use crate::test_support::new_git_repo_with_file;
     use std::collections::BTreeMap;
     use std::process::Command as StdCommand;
-    use tempfile::TempDir;
 
-    fn new_git_repo() -> (TempDir, PathBuf) {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path().to_path_buf();
-        let git = |args: &[&str]| {
-            let s = StdCommand::new("git")
-                .current_dir(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t.t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t.t")
-                .status()
-                .unwrap();
-            assert!(s.success());
-        };
-        git(&["init", "-q", "-b", "main"]);
-        git(&["config", "user.email", "t@t.t"]);
-        git(&["config", "user.name", "t"]);
-        std::fs::write(root.join("a.ts"), "1\n").unwrap();
-        git(&["add", "."]);
-        git(&["commit", "-q", "-m", "init"]);
-        (dir, root)
+    fn new_git_repo() -> (tempfile::TempDir, PathBuf) {
+        new_git_repo_with_file("a.ts", "1\n")
     }
 
     fn stub_job(name: &str, run: &str) -> Job {
         Job {
-            name: name.to_owned(),
+            name: name.into(),
             run: run.to_owned(),
             fix: None,
             glob: Vec::new(),
@@ -919,7 +636,7 @@ mod tests {
 
     fn stub_hook(name: &str, jobs: Vec<Job>) -> Hook {
         Hook {
-            name: name.to_owned(),
+            name: name.into(),
             parallel: false,
             parallel_explicit: false,
             fail_fast: false,
@@ -933,7 +650,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_hook_succeeds_when_every_job_exits_zero() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "1\n");
         let hook = stub_hook(
             "pre-commit",
             vec![

@@ -21,7 +21,7 @@ use betterhook::runner::output::DiagnosticSeverity;
 
 fn job(name: &str, reads: &[&str], writes: &[&str], priority: u32) -> Job {
     Job {
-        name: name.to_owned(),
+        name: name.into(),
         run: "true".to_owned(),
         fix: None,
         glob: Vec::new(),
