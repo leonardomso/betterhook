@@ -17,5 +17,7 @@ pub mod install;
 pub mod lock;
 pub mod runner;
 pub mod status;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

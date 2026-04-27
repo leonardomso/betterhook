@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use betterhook::config::{IsolateSpec, ToolPathScope};
 use betterhook::lock::protocol::{
-    LockKey, LockStatus, PROTOCOL_VERSION, Request, Response, Scope, decode_frame, encode_frame,
+    LockKey, LockStatus, LockToken, PROTOCOL_VERSION, Request, Response, Scope, decode_frame,
+    encode_frame,
 };
 use betterhook::lock::{FileLock, acquire_job_lock, key_for_spec, lock_dir};
 use tempfile::TempDir;
@@ -235,11 +236,13 @@ fn encode_decode_request_acquire() {
 
 #[test]
 fn encode_decode_request_release() {
-    let req = Request::Release { token: 42 };
+    let req = Request::Release {
+        token: LockToken(42),
+    };
     let frame = encode_frame(&req).unwrap();
     let decoded: Request = decode_frame(&frame[4..]).unwrap();
     match decoded {
-        Request::Release { token } => assert_eq!(token, 42),
+        Request::Release { token } => assert_eq!(token, LockToken(42)),
         _ => panic!("wrong variant"),
     }
 }
@@ -260,11 +263,13 @@ fn encode_decode_request_ping() {
 
 #[test]
 fn encode_decode_response_granted() {
-    let resp = Response::Granted { token: 99 };
+    let resp = Response::Granted {
+        token: LockToken(99),
+    };
     let frame = encode_frame(&resp).unwrap();
     let decoded: Response = decode_frame(&frame[4..]).unwrap();
     match decoded {
-        Response::Granted { token } => assert_eq!(token, 99),
+        Response::Granted { token } => assert_eq!(token, LockToken(99)),
         _ => panic!("wrong variant"),
     }
 }

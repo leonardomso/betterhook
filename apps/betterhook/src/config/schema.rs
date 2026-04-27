@@ -7,6 +7,7 @@
 //!   Call [`RawConfig::lower`] to produce one.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -162,6 +163,111 @@ pub struct RawIsolateTable {
 // Canonical typed config.
 // ============================================================================
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct HookName(String);
+
+impl HookName {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for HookName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for HookName {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl AsRef<str> for HookName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for HookName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct JobName(String);
+
+impl JobName {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for JobName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for JobName {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl AsRef<str> for JobName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for JobName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PackageName(String);
+
+impl PackageName {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for PackageName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for PackageName {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl AsRef<str> for PackageName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for PackageName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub meta: Meta,
@@ -173,7 +279,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Package {
-    pub name: String,
+    pub name: PackageName,
     pub path: PathBuf,
     /// Package-declared hooks. Dispatch overlays these on top of the
     /// root hooks when a package match is selected.
@@ -189,7 +295,7 @@ pub struct Meta {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hook {
-    pub name: String,
+    pub name: HookName,
     pub parallel: bool,
     pub parallel_explicit: bool,
     pub fail_fast: bool,
@@ -204,7 +310,7 @@ pub struct Hook {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
-    pub name: String,
+    pub name: JobName,
     pub run: String,
     pub fix: Option<String>,
     pub glob: Vec<String>,
@@ -311,7 +417,7 @@ impl RawConfig {
             packages.insert(
                 pkg_name.clone(),
                 Package {
-                    name: pkg_name,
+                    name: pkg_name.into(),
                     path: raw_pkg.path,
                     hooks: pkg_hooks,
                 },
@@ -355,7 +461,7 @@ fn lower_hook(name: &str, raw: RawHook) -> ConfigResult<Hook> {
     jobs.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.name.cmp(&b.name)));
 
     Ok(Hook {
-        name: name.to_owned(),
+        name: name.into(),
         parallel,
         parallel_explicit: raw.parallel.is_some(),
         fail_fast,
@@ -432,7 +538,7 @@ fn lower_job(name: &str, mut raw: RawJob, priority: u32) -> ConfigResult<Job> {
     }
 
     Ok(Job {
-        name: name.to_owned(),
+        name: name.into(),
         run,
         fix: raw.fix,
         glob: raw.glob,

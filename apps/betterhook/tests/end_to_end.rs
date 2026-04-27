@@ -16,8 +16,10 @@ use betterhook::cache::{lookup_blocking, store_result_blocking};
 use betterhook::config::import::{self, ImportSource};
 use betterhook::config::{Hook, Job, load};
 use betterhook::dispatch::{Dispatch, find_config, resolve, resolve_packages};
+use betterhook::git::git_common_dir;
 use betterhook::install::{InstallOptions, install};
 use betterhook::runner::run_hook_with_options;
+use betterhook::status::StatusComponent;
 
 use common::{git, init_repo, run_options_quiet, write_config};
 
@@ -207,7 +209,7 @@ async fn cache_round_trip_keeps_first_run_and_invalidates_on_change() {
     let files = vec![target.clone()];
 
     let job = Job {
-        name: "lint".to_owned(),
+        name: "lint".into(),
         run: "eslint --cache {files}".to_owned(),
         fix: None,
         glob: vec!["*.tsx".to_owned()],
@@ -284,6 +286,83 @@ async fn status_handles_repo_without_config() {
     let status = betterhook::status::collect(Some(&repo)).await.unwrap();
     assert!(status.config.is_none());
     assert!(status.installed.is_none() || status.installed.is_some());
+}
+
+#[tokio::test]
+async fn status_reports_config_diagnostics_for_invalid_config() {
+    let (_d, repo) = init_repo();
+    let config_path = repo.join("betterhook.toml");
+    std::fs::write(
+        &config_path,
+        r"[hooks.pre-commit.jobs.lint]
+run = true
+",
+    )
+    .unwrap();
+
+    let canonical_config_path = std::fs::canonicalize(&config_path).unwrap();
+    let status = betterhook::status::collect(Some(&repo)).await.unwrap();
+    assert!(status.config.is_none());
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diag| diag.component == StatusComponent::Config
+                && diag.path.as_ref().is_some_and(|path| {
+                    std::fs::canonicalize(path).ok().as_ref() == Some(&canonical_config_path)
+                }))
+    );
+}
+
+#[tokio::test]
+async fn status_reports_installed_manifest_diagnostics_when_manifest_is_corrupt() {
+    let (_d, repo) = init_repo();
+    write_config(
+        &repo,
+        r#"[hooks.pre-commit.jobs.lint]
+run = "true"
+"#,
+    );
+    install(InstallOptions {
+        worktree: Some(repo.clone()),
+        skip_unit: true,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let common = git_common_dir(&repo).await.unwrap();
+    let manifest_path = common.join("betterhook").join("installed.json");
+    std::fs::write(&manifest_path, "{not-json").unwrap();
+
+    let status = betterhook::status::collect(Some(&repo)).await.unwrap();
+    assert!(status.installed.is_none());
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diag| diag.component == StatusComponent::Installed
+                && diag.path.as_deref() == Some(manifest_path.as_path()))
+    );
+}
+
+#[tokio::test]
+async fn status_reports_speculative_diagnostics_when_sidecar_is_corrupt() {
+    let (_d, repo) = init_repo();
+    let common = git_common_dir(&repo).await.unwrap();
+    let stats_path = common.join("betterhook").join("speculative-stats.json");
+    std::fs::create_dir_all(stats_path.parent().unwrap()).unwrap();
+    std::fs::write(&stats_path, "{not-json").unwrap();
+
+    let status = betterhook::status::collect(Some(&repo)).await.unwrap();
+    assert!(status.speculative.is_none());
+    assert!(
+        status
+            .diagnostics
+            .iter()
+            .any(|diag| diag.component == StatusComponent::Speculative
+                && diag.path.as_deref() == Some(stats_path.as_path()))
+    );
 }
 
 // ───────────────────────────── importers ─────────────────────────────

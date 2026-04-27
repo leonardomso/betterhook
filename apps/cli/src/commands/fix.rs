@@ -50,7 +50,7 @@ pub async fn run(args: Args) -> miette::Result<()> {
 fn swap_in_fix_commands(hook: &Hook, job_filter: &[String]) -> Hook {
     let mut out = hook.clone();
     out.jobs.retain(|j| {
-        if !job_filter.is_empty() && !job_filter.iter().any(|n| n == &j.name) {
+        if !job_filter.is_empty() && !job_filter.iter().any(|n| n == j.name.as_str()) {
             return false;
         }
         j.fix.is_some()

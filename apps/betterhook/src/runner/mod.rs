@@ -5,10 +5,13 @@
 //! behavior.
 
 pub mod dag;
+mod diagnostics;
 pub mod executor;
 pub mod glob_util;
 pub mod output;
+mod plan;
 pub mod proc;
+mod stage;
 
 use std::path::PathBuf;
 

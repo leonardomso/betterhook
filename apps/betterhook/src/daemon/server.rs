@@ -19,7 +19,7 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use super::lifecycle::IDLE_LINGER;
 use super::registry::{HeldPermit, Registry};
-use crate::lock::protocol::{LockKey, PROTOCOL_VERSION, Request, Response};
+use crate::lock::protocol::{LockKey, LockToken, PROTOCOL_VERSION, Request, Response};
 
 /// Track the number of currently-connected clients. When this hits 0
 /// we arm the idle-exit timer.
@@ -35,7 +35,7 @@ pub async fn serve(socket_path: &Path) -> std::io::Result<()> {
     // crash — only after verifying no one is listening on it.
     if socket_path.exists() {
         if UnixStream::connect(socket_path).await.is_err() {
-            let _ = std::fs::remove_file(socket_path);
+            let _ = tokio::fs::remove_file(socket_path).await;
         } else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AddrInUse,
@@ -44,7 +44,7 @@ pub async fn serve(socket_path: &Path) -> std::io::Result<()> {
         }
     }
     if let Some(parent) = socket_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        tokio::fs::create_dir_all(parent).await?;
     }
     let listener = UnixListener::bind(socket_path)?;
     tracing::info!(path = %socket_path.display(), "betterhookd listening");
@@ -84,7 +84,7 @@ pub async fn serve(socket_path: &Path) -> std::io::Result<()> {
         }
     }
 
-    let _ = std::fs::remove_file(socket_path);
+    let _ = tokio::fs::remove_file(socket_path).await;
     Ok(())
 }
 
@@ -102,7 +102,7 @@ async fn handle_connection(
     // Each connection holds its acquired permits by token so explicit
     // `Release` requests can drop exactly one, while connection close
     // drops them all (via the map's Drop).
-    let held: Mutex<HashMap<u64, HeldPermit>> = Mutex::new(HashMap::new());
+    let held: Mutex<HashMap<LockToken, HeldPermit>> = Mutex::new(HashMap::new());
 
     while let Some(frame) = framed.next().await {
         let frame = frame?;
@@ -145,7 +145,7 @@ async fn handle_acquire(
     key: LockKey,
     timeout_ms: u64,
     next_token: &AtomicU64,
-    held: &Mutex<HashMap<u64, HeldPermit>>,
+    held: &Mutex<HashMap<LockToken, HeldPermit>>,
 ) -> Response {
     let sem = match registry.semaphore(&key).await {
         Ok(s) => s,
@@ -172,7 +172,7 @@ async fn handle_acquire(
             Err(_) => return Response::Timeout,
         }
     };
-    let token = next_token.fetch_add(1, Ordering::SeqCst);
+    let token = LockToken(next_token.fetch_add(1, Ordering::SeqCst));
     held.lock()
         .await
         .insert(token, HeldPermit { token, permit });

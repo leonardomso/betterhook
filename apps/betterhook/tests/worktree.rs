@@ -166,7 +166,7 @@ async fn stash_operations_serialize_across_linked_worktrees() {
     std::fs::write(linked[0].join("scratch.log"), "linked\n").unwrap();
 
     let hook = Hook {
-        name: "pre-commit".to_owned(),
+        name: "pre-commit".into(),
         parallel: false,
         parallel_explicit: false,
         fail_fast: false,
@@ -175,7 +175,7 @@ async fn stash_operations_serialize_across_linked_worktrees() {
         stash_untracked: true,
         stash_untracked_explicit: true,
         jobs: vec![Job {
-            name: "noop".to_owned(),
+            name: "noop".into(),
             run: "true".to_owned(),
             fix: None,
             glob: Vec::new(),

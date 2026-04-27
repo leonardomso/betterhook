@@ -22,8 +22,9 @@ for every hook type declared in your config. At commit time, the wrapper runs
   Unset an existing foreign `core.hooksPath` before installing. Use this when
   switching from husky / pre-commit.
 </ParamField>
-<ParamField path="--config" type="path" default="./betterhook.toml">
-  Explicit config file to read.
+<ParamField path="--config" type="path" default="auto-discover betterhook.toml / .yml / .yaml / .kdl / .json">
+  Explicit config file to read. When omitted, betterhook scans the worktree
+  root for the supported config filenames in priority order.
 </ParamField>
 
 ## What gets written
@@ -42,7 +43,6 @@ worktree_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 exec "/path/to/betterhook" __dispatch \
   --hook "$hook_name" \
   --worktree "$worktree_root" \
-  --git-dir "${GIT_DIR:-}" \
   -- "$@"
 ```
 

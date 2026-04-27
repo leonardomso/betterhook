@@ -15,7 +15,7 @@ use betterhook::daemon::watcher::WatcherEvent;
 
 fn mk_job(name: &str, glob: Vec<&str>, concurrent_safe: bool) -> Job {
     Job {
-        name: name.to_owned(),
+        name: name.into(),
         run: "true".to_owned(),
         fix: None,
         glob: glob.into_iter().map(str::to_owned).collect(),
@@ -41,7 +41,7 @@ fn mk_job(name: &str, glob: Vec<&str>, concurrent_safe: bool) -> Job {
 
 fn mk_hook(name: &str, jobs: Vec<Job>) -> Hook {
     Hook {
-        name: name.to_owned(),
+        name: name.into(),
         parallel: false,
         parallel_explicit: false,
         fail_fast: false,
@@ -55,7 +55,7 @@ fn mk_hook(name: &str, jobs: Vec<Job>) -> Hook {
 
 fn mk_config(hook: Hook) -> Config {
     let mut hooks = BTreeMap::new();
-    hooks.insert(hook.name.clone(), hook);
+    hooks.insert(hook.name.to_string(), hook);
     Config {
         meta: Meta {
             version: 1,
@@ -126,7 +126,7 @@ fn matcher_filters_non_concurrent_safe() {
     );
     let m = HookMatcher::from_hook(&hook).unwrap();
     assert_eq!(m.jobs.len(), 1);
-    assert_eq!(m.jobs[0].0.name, "lint-safe");
+    assert_eq!(m.jobs[0].0.name.as_str(), "lint-safe");
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn matcher_jobs_for_matching_glob() {
     let m = HookMatcher::from_hook(&hook).unwrap();
     let jobs = m.jobs_for(&PathBuf::from("a.ts"));
     assert_eq!(jobs.len(), 1);
-    assert_eq!(jobs[0].name, "lint");
+    assert_eq!(jobs[0].name.as_str(), "lint");
 }
 
 #[test]
@@ -184,7 +184,7 @@ fn speculative_handle_event_produces_tasks() {
     let event = watcher_event(vec!["a.ts"]);
     let tasks = spec.handle_event(event);
     assert!(!tasks.is_empty());
-    assert_eq!(tasks[0].jobs[0].name, "lint");
+    assert_eq!(tasks[0].jobs[0].name.as_str(), "lint");
 }
 
 #[test]
