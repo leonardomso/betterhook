@@ -1,10 +1,10 @@
 //! Structured output events and the TTY multiplexer.
 //!
-//! Every subprocess line becomes one `OutputEvent::Line` that gets shipped
-//! through an mpsc channel to a single writer task. The writer holds the
-//! only handle to stdout/stderr, so interleaved output from parallel jobs
-//! stays line-atomic — never a garbled half-line. Phase 12 adds an NDJSON
-//! sink that drains the same event stream.
+//! Every subprocess line becomes one `OutputEvent::Line` shipped
+//! through an mpsc channel to a single writer task. The writer holds
+//! the only handle to stdout/stderr, so interleaved output from
+//! parallel jobs stays line-atomic. The same event stream can also be
+//! drained as NDJSON for agents.
 
 use std::time::Duration;
 

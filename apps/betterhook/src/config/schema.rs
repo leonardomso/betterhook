@@ -7,6 +7,7 @@
 //!   Call [`RawConfig::lower`] to produce one.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -24,9 +25,9 @@ pub struct RawConfig {
     pub extends: Vec<PathBuf>,
     #[serde(default)]
     pub hooks: BTreeMap<String, RawHook>,
-    /// Monorepo packages (phase 33+). Each entry declares a
-    /// directory path filter and optional per-package hook
-    /// overlays that inherit from the root-level `hooks` map.
+    /// Monorepo packages. Each entry declares a directory path filter
+    /// and optional per-package hook overlays that inherit from the
+    /// root-level `hooks` map.
     #[serde(default)]
     pub packages: BTreeMap<String, RawPackage>,
 }
@@ -114,7 +115,7 @@ pub struct RawJob {
     #[serde(default)]
     pub fail_text: Option<String>,
 
-    // v1 capability DAG fields (phase 25+).
+    // Capability-DAG fields.
     #[serde(default)]
     pub reads: Vec<String>,
     #[serde(default)]
@@ -162,6 +163,111 @@ pub struct RawIsolateTable {
 // Canonical typed config.
 // ============================================================================
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct HookName(String);
+
+impl HookName {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for HookName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for HookName {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl AsRef<str> for HookName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for HookName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct JobName(String);
+
+impl JobName {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for JobName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for JobName {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl AsRef<str> for JobName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for JobName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PackageName(String);
+
+impl PackageName {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for PackageName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for PackageName {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl AsRef<str> for PackageName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for PackageName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub meta: Meta,
@@ -173,11 +279,10 @@ pub struct Config {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Package {
-    pub name: String,
+    pub name: PackageName,
     pub path: PathBuf,
-    /// Fully-resolved per-package hooks. Phase 35 layers package
-    /// overrides on top of root hooks here; phase 33 just stores
-    /// whatever the user declared directly.
+    /// Package-declared hooks. Dispatch overlays these on top of the
+    /// root hooks when a package match is selected.
     pub hooks: BTreeMap<String, Hook>,
 }
 
@@ -187,13 +292,17 @@ pub struct Meta {
     pub min_betterhook: Option<semver::VersionReq>,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hook {
-    pub name: String,
+    pub name: HookName,
     pub parallel: bool,
+    pub parallel_explicit: bool,
     pub fail_fast: bool,
+    pub fail_fast_explicit: bool,
     pub parallel_limit: Option<usize>,
     pub stash_untracked: bool,
+    pub stash_untracked_explicit: bool,
     /// Jobs in priority order (index 0 runs first when contending).
     pub jobs: Vec<Job>,
 }
@@ -201,7 +310,7 @@ pub struct Hook {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
-    pub name: String,
+    pub name: JobName,
     pub run: String,
     pub fix: Option<String>,
     pub glob: Vec<String>,
@@ -218,9 +327,9 @@ pub struct Job {
     pub fail_text: Option<String>,
     pub priority: u32,
 
-    // v1 capability DAG fields (phase 25). Phase 26's DAG resolver
-    // compiles `reads`/`writes` into `GlobSet`s and uses them to
-    // decide which jobs can run in parallel.
+    // Capability-DAG inputs. The resolver compiles `reads` and
+    // `writes` into `GlobSet`s and uses them to decide which jobs can
+    // run in parallel.
     /// Glob patterns describing files this job reads from. Used by
     /// the DAG resolver to detect read-after-write conflicts.
     pub reads: Vec<String>,
@@ -231,9 +340,9 @@ pub struct Job {
     /// True if this job reaches the network. Network jobs are
     /// serialized behind a shared lock unless `concurrent_safe`.
     pub network: bool,
-    /// True if this job is safe to run speculatively on file save
-    /// from the daemon watcher (phases 37-39). Safe means: no
-    /// network, no writes that touch unrelated files, idempotent.
+    /// True if this job is safe to run speculatively on file save from
+    /// the daemon watcher. Safe means: no network, no unrelated writes,
+    /// and idempotent behavior.
     pub concurrent_safe: bool,
     /// If set, names a registered builtin whose `parse_output` is
     /// called on the subprocess stdout to emit structured `Diagnostic`
@@ -298,9 +407,9 @@ impl RawConfig {
         let mut packages = BTreeMap::new();
         for (pkg_name, raw_pkg) in self.packages {
             let mut pkg_hooks = BTreeMap::new();
-            // Phase 33 lowers every hook the package declared. Phase 35
-            // will overlay these on top of the root hooks during
-            // dispatch so packages can add-or-override per-job.
+            // Lower every hook the package declared. Dispatch overlays
+            // these on top of the root hooks so packages can add or
+            // replace per-job behavior.
             for (hook_name, raw_hook) in raw_pkg.hooks {
                 let hook = lower_hook(&hook_name, raw_hook)?;
                 pkg_hooks.insert(hook_name, hook);
@@ -308,7 +417,7 @@ impl RawConfig {
             packages.insert(
                 pkg_name.clone(),
                 Package {
-                    name: pkg_name,
+                    name: pkg_name.into(),
                     path: raw_pkg.path,
                     hooks: pkg_hooks,
                 },
@@ -352,11 +461,14 @@ fn lower_hook(name: &str, raw: RawHook) -> ConfigResult<Hook> {
     jobs.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.name.cmp(&b.name)));
 
     Ok(Hook {
-        name: name.to_owned(),
+        name: name.into(),
         parallel,
+        parallel_explicit: raw.parallel.is_some(),
         fail_fast,
+        fail_fast_explicit: raw.fail_fast.is_some(),
         parallel_limit: raw.parallel_limit,
         stash_untracked,
+        stash_untracked_explicit: raw.stash_untracked.is_some(),
         jobs,
     })
 }
@@ -426,7 +538,7 @@ fn lower_job(name: &str, mut raw: RawJob, priority: u32) -> ConfigResult<Job> {
     }
 
     Ok(Job {
-        name: name.to_owned(),
+        name: name.into(),
         run,
         fix: raw.fix,
         glob: raw.glob,

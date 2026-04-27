@@ -45,7 +45,7 @@ fn result_with_events(exit: i32, events: Vec<OutputEvent>) -> CachedResult {
 
 fn mk_job(run: &str) -> Job {
     Job {
-        name: "test-job".to_owned(),
+        name: "test-job".into(),
         run: run.to_owned(),
         fix: None,
         glob: Vec::new(),

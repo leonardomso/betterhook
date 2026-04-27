@@ -94,6 +94,26 @@ enum Outcome {
     WaitErr(std::io::Error),
 }
 
+/// Git exports repo-local environment variables into hook processes.
+/// Scrub them before launching user jobs so nested git commands resolve
+/// against the job's cwd instead of the parent hook invocation state.
+const SCRUBBED_GIT_ENV_VARS: &[&str] = &[
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+];
+
 /// Invocation parameters for [`run_command`]. Grouped into a struct
 /// so the orchestrator doesn't need eight positional arguments.
 pub struct CommandSpec<'a> {
@@ -111,9 +131,9 @@ pub struct CommandSpec<'a> {
 /// Returns the exit code (`-1` on signal, whatever `status.code()` yields,
 /// [`EXIT_TIMEOUT`] on timeout, [`EXIT_CANCELLED`] on cancellation).
 ///
-/// v1.0.1 split the previously 154-line implementation into three
-/// helpers — `spawn_subprocess`, `monitor_child`, `drain_readers` —
-/// plus this short orchestrator.
+/// This thin wrapper keeps the public entry point readable while the
+/// lower-level subprocess, monitor, and reader logic stays in helper
+/// functions below.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_command(
     job_name: &str,
@@ -186,6 +206,9 @@ fn spawn_subprocess(spec: &CommandSpec<'_>) -> Result<tokio::process::Child, Run
         // `set.abort_all()`), the child process gets SIGKILL on drop
         // instead of outliving its parent.
         .kill_on_drop(true);
+    for key in SCRUBBED_GIT_ENV_VARS {
+        command.env_remove(key);
+    }
     for (k, v) in spec.env {
         command.env(k, v);
     }

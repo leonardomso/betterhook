@@ -107,7 +107,7 @@ fn print_json(
     let mut payload = serde_json::json!({
         "config_path": path.display().to_string(),
         "hook": {
-            "name": hook.name,
+            "name": hook.name.to_string(),
             "parallel": hook.parallel,
             "fail_fast": hook.fail_fast,
             "stash_untracked": hook.stash_untracked,
@@ -115,13 +115,13 @@ fn print_json(
     });
     let mut jobs = Vec::new();
     for job in &hook.jobs {
-        if let Some(filter) = args.job.as_deref() {
-            if filter != job.name {
-                continue;
-            }
+        if let Some(filter) = args.job.as_deref()
+            && filter != job.name.as_str()
+        {
+            continue;
         }
         jobs.push(serde_json::json!({
-            "name": job.name,
+            "name": job.name.to_string(),
             "run": job.run,
             "fix": job.fix,
             "glob": job.glob,

@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::dispatch::find_config;
-use crate::error::ConfigResult;
 use crate::git::{git_common_dir, git_dir, show_toplevel};
 use crate::install::{InstalledManifest, MANIFEST_FILENAME};
 
@@ -21,9 +20,11 @@ pub struct Status {
     pub worktree: WorktreeInfo,
     pub installed: Option<InstalledInfo>,
     pub config: Option<ConfigInfo>,
-    /// Phase 40: speculative runner snapshot. Read from the sidecar
-    /// the daemon writes at `<common>/betterhook/speculative-stats.json`.
-    /// `None` means the daemon has never run in this repo.
+    #[serde(default)]
+    pub diagnostics: Vec<StatusDiagnostic>,
+    /// Snapshot of speculative-runner state read from
+    /// `<common>/betterhook/speculative-stats.json`.
+    /// `None` means the daemon has not written stats for this repo yet.
     #[serde(default)]
     pub speculative: Option<crate::daemon::speculative::SpeculativeStats>,
 }
@@ -76,9 +77,8 @@ pub struct HookInfo {
     pub fail_fast: bool,
     pub stash_untracked: bool,
     pub jobs: Vec<String>,
-    /// Phase 28: resolved DAG summary so agents can see at a glance
-    /// which jobs are roots, how many edges exist, and which pairs
-    /// will serialize.
+    /// Summary of the resolved execution DAG so agents can see which
+    /// jobs start first and which pairs must serialize.
     pub dag: Option<DagSummary>,
 }
 
@@ -93,15 +93,33 @@ pub struct DagSummary {
     pub edges: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatusDiagnostic {
+    pub component: StatusComponent,
+    pub path: Option<PathBuf>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusComponent {
+    Installed,
+    Config,
+    Speculative,
+}
+
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum StatusError {
     #[error("git error")]
     #[diagnostic(transparent)]
     Git(#[from] crate::git::GitError),
 
-    #[error("config error")]
-    #[diagnostic(transparent)]
-    Config(#[from] Box<crate::error::ConfigError>),
+    #[error("config error at {path}")]
+    Config {
+        path: PathBuf,
+        #[source]
+        source: Box<crate::error::ConfigError>,
+    },
 
     #[error("io error at {path}")]
     Io {
@@ -112,6 +130,13 @@ pub enum StatusError {
 
     #[error("failed to parse manifest at {path}")]
     ManifestParse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to parse speculative stats at {path}")]
+    SpeculativeParse {
         path: PathBuf,
         #[source]
         source: serde_json::Error,
@@ -127,9 +152,28 @@ pub async fn collect(worktree: Option<&Path>) -> StatusResult<Status> {
     let git_dir = git_dir(&toplevel).await?;
     let common_dir = git_common_dir(&toplevel).await?;
 
-    let installed = read_installed(&common_dir).ok().flatten();
-    let config = read_config(&toplevel).ok().flatten();
-    let speculative = crate::daemon::speculative::read_stats(&common_dir);
+    let mut diagnostics = Vec::new();
+    let installed = match read_installed_async(&common_dir).await {
+        Ok(installed) => installed,
+        Err(err) => {
+            diagnostics.push(diagnostic_for_error(StatusComponent::Installed, &err));
+            None
+        }
+    };
+    let config = match read_config_async(&toplevel).await {
+        Ok(config) => config,
+        Err(err) => {
+            diagnostics.push(diagnostic_for_error(StatusComponent::Config, &err));
+            None
+        }
+    };
+    let speculative = match read_speculative_async(&common_dir).await {
+        Ok(speculative) => speculative,
+        Err(err) => {
+            diagnostics.push(diagnostic_for_error(StatusComponent::Speculative, &err));
+            None
+        }
+    };
 
     Ok(Status {
         betterhook_version: crate::VERSION,
@@ -140,6 +184,7 @@ pub async fn collect(worktree: Option<&Path>) -> StatusResult<Status> {
         },
         installed,
         config,
+        diagnostics,
         speculative,
     })
 }
@@ -194,17 +239,20 @@ fn read_installed(common_dir: &Path) -> StatusResult<Option<InstalledInfo>> {
     }))
 }
 
-fn read_config(worktree: &Path) -> ConfigResult<Option<ConfigInfo>> {
+fn read_config(worktree: &Path) -> StatusResult<Option<ConfigInfo>> {
     let Some(path) = find_config(worktree) else {
         return Ok(None);
     };
-    let config = crate::config::load(&path)?;
+    let config = crate::config::load(&path).map_err(|source| StatusError::Config {
+        path: path.clone(),
+        source: Box::new(source),
+    })?;
     let hooks: Vec<HookInfo> = config.hooks.values().map(hook_info).collect();
     let packages: Vec<PackageInfo> = config
         .packages
         .values()
         .map(|pkg| PackageInfo {
-            name: pkg.name.clone(),
+            name: pkg.name.to_string(),
             path: pkg.path.clone(),
             hooks: pkg.hooks.values().map(hook_info).collect(),
         })
@@ -216,13 +264,77 @@ fn read_config(worktree: &Path) -> ConfigResult<Option<ConfigInfo>> {
     }))
 }
 
+fn read_speculative(
+    common_dir: &Path,
+) -> StatusResult<Option<crate::daemon::speculative::SpeculativeStats>> {
+    let path = crate::daemon::speculative::stats_path(common_dir);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => return Err(StatusError::Io { path, source }),
+    };
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|source| StatusError::SpeculativeParse { path, source })
+}
+
+async fn read_installed_async(common_dir: &Path) -> StatusResult<Option<InstalledInfo>> {
+    let common_dir = common_dir.to_path_buf();
+    let task_common_dir = common_dir.clone();
+    tokio::task::spawn_blocking(move || read_installed(&task_common_dir))
+        .await
+        .map_err(|source| StatusError::Io {
+            path: common_dir.clone(),
+            source: std::io::Error::other(format!("status installed task failed: {source}")),
+        })?
+}
+
+async fn read_config_async(worktree: &Path) -> StatusResult<Option<ConfigInfo>> {
+    let worktree = worktree.to_path_buf();
+    let task_worktree = worktree.clone();
+    tokio::task::spawn_blocking(move || read_config(&task_worktree))
+        .await
+        .map_err(|source| StatusError::Io {
+            path: worktree.clone(),
+            source: std::io::Error::other(format!("status config task failed: {source}")),
+        })?
+}
+
+async fn read_speculative_async(
+    common_dir: &Path,
+) -> StatusResult<Option<crate::daemon::speculative::SpeculativeStats>> {
+    let common_dir = common_dir.to_path_buf();
+    let task_common_dir = common_dir.clone();
+    tokio::task::spawn_blocking(move || read_speculative(&task_common_dir))
+        .await
+        .map_err(|source| StatusError::Io {
+            path: common_dir.clone(),
+            source: std::io::Error::other(format!("status speculative task failed: {source}")),
+        })?
+}
+
+fn diagnostic_for_error(component: StatusComponent, err: &StatusError) -> StatusDiagnostic {
+    let path = match err {
+        StatusError::Io { path, .. }
+        | StatusError::ManifestParse { path, .. }
+        | StatusError::SpeculativeParse { path, .. }
+        | StatusError::Config { path, .. } => Some(path.clone()),
+        StatusError::Git(_) => None,
+    };
+    StatusDiagnostic {
+        component,
+        path,
+        message: err.to_string(),
+    }
+}
+
 fn hook_info(h: &crate::config::Hook) -> HookInfo {
     HookInfo {
-        name: h.name.clone(),
+        name: h.name.to_string(),
         parallel: h.parallel,
         fail_fast: h.fail_fast,
         stash_untracked: h.stash_untracked,
-        jobs: h.jobs.iter().map(|j| j.name.clone()).collect(),
+        jobs: h.jobs.iter().map(|j| j.name.to_string()).collect(),
         dag: summarize_dag(h),
     }
 }
@@ -232,15 +344,15 @@ fn summarize_dag(hook: &crate::config::Hook) -> Option<DagSummary> {
     let roots: Vec<String> = graph
         .roots()
         .into_iter()
-        .map(|i| graph.nodes[i].job.name.clone())
+        .map(|i| graph.nodes[i].job.name.to_string())
         .collect();
     let edges: Vec<(String, String)> = graph
         .edges()
         .into_iter()
         .map(|(a, b)| {
             (
-                graph.nodes[a].job.name.clone(),
-                graph.nodes[b].job.name.clone(),
+                graph.nodes[a].job.name.to_string(),
+                graph.nodes[b].job.name.to_string(),
             )
         })
         .collect();

@@ -1,7 +1,6 @@
 //! Resolve a job's tool binary and hash it for the CA cache key.
 //!
-//! Phase 31 replaces phase 29's `tool_hash_proxy` placeholder with a
-//! proper path resolver that:
+//! The resolver:
 //!
 //! 1. Parses the first whitespace-separated token of the run command
 //!    as the tool invocation (e.g. `eslint --cache ...` → `eslint`).
@@ -13,7 +12,7 @@
 //! 5. Hashes the resulting file via blake3 mmap.
 //!
 //! Failures at any step fall back to the run-string hash so the cache
-//! key stays stable and correct (if overly coarse).
+//! key stays stable even when binary resolution is unavailable.
 
 use std::collections::HashMap;
 use std::io;

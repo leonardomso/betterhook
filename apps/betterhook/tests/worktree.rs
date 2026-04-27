@@ -7,9 +7,13 @@
 
 mod common;
 
+use std::collections::BTreeMap;
+
+use betterhook::config::{Hook, Job};
 use betterhook::dispatch::{Dispatch, resolve};
 use betterhook::git::git_common_dir;
 use betterhook::install::{InstallOptions, install};
+use betterhook::runner::run_hook;
 
 use common::new_repo_with_worktrees;
 
@@ -153,4 +157,49 @@ async fn uninstall_refuses_when_other_worktree_still_has_config() {
         resolve(&linked[0], "pre-commit").unwrap(),
         Dispatch::Run { .. }
     ));
+}
+
+#[tokio::test]
+async fn stash_operations_serialize_across_linked_worktrees() {
+    let (_d, primary, linked) = new_repo_with_worktrees(1);
+    std::fs::write(primary.join("scratch.log"), "primary\n").unwrap();
+    std::fs::write(linked[0].join("scratch.log"), "linked\n").unwrap();
+
+    let hook = Hook {
+        name: "pre-commit".into(),
+        parallel: false,
+        parallel_explicit: false,
+        fail_fast: false,
+        fail_fast_explicit: false,
+        parallel_limit: None,
+        stash_untracked: true,
+        stash_untracked_explicit: true,
+        jobs: vec![Job {
+            name: "noop".into(),
+            run: "true".to_owned(),
+            fix: None,
+            glob: Vec::new(),
+            exclude: Vec::new(),
+            tags: Vec::new(),
+            skip: None,
+            only: None,
+            env: BTreeMap::new(),
+            root: None,
+            stage_fixed: false,
+            isolate: None,
+            timeout: None,
+            interactive: false,
+            fail_text: None,
+            priority: 0,
+            reads: Vec::new(),
+            writes: Vec::new(),
+            network: false,
+            concurrent_safe: false,
+            builtin: None,
+        }],
+    };
+
+    let (left, right) = tokio::join!(run_hook(&hook, &primary), run_hook(&hook, &linked[0]));
+    assert!(left.unwrap().ok);
+    assert!(right.unwrap().ok);
 }

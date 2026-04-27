@@ -11,29 +11,14 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::{self, Config, Hook, Package};
+use crate::config::{self, Config, Hook, HookName, Package};
 use crate::error::ConfigResult;
-
-/// Candidate config filenames, in lookup order. First match wins.
-pub const CONFIG_CANDIDATES: &[&str] = &[
-    "betterhook.toml",
-    "betterhook.yml",
-    "betterhook.yaml",
-    "betterhook.json",
-    "betterhook.kdl",
-];
 
 /// Find the first `betterhook.*` config file in `worktree`. Returns
 /// `None` if no candidate exists.
 #[must_use]
 pub fn find_config(worktree: &Path) -> Option<PathBuf> {
-    for name in CONFIG_CANDIDATES {
-        let candidate = worktree.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+    config::find_config_path(worktree)
 }
 
 /// Outcome of resolving a dispatch invocation.
@@ -45,7 +30,7 @@ pub enum Dispatch {
     /// Config exists and has the hook, but with zero jobs.
     NoJobs,
     /// Ready to execute.
-    Run { config: Config, hook_name: String },
+    Run { config: Config, hook_name: HookName },
 }
 
 impl Dispatch {
@@ -53,7 +38,7 @@ impl Dispatch {
     #[must_use]
     pub fn hook(&self) -> Option<&Hook> {
         match self {
-            Self::Run { config, hook_name } => config.hooks.get(hook_name),
+            Self::Run { config, hook_name } => config.hooks.get(hook_name.as_str()),
             _ => None,
         }
     }
@@ -97,7 +82,7 @@ pub fn resolve(worktree: &Path, hook_name: &str) -> ConfigResult<Dispatch> {
     }
     Ok(Dispatch::Run {
         config,
-        hook_name: hook_name.to_owned(),
+        hook_name: hook_name.into(),
     })
 }
 
@@ -127,9 +112,9 @@ pub fn resolve_packages<'a>(config: &'a Config, staged_files: &[PathBuf]) -> Vec
         std::collections::HashMap::with_capacity(packages.len());
     let mut root_bucket: Vec<PathBuf> = Vec::new();
 
-    // v1.0.1: clone each file exactly once — into exactly one bucket —
-    // instead of cloning into a string-keyed map and then re-cloning
-    // the whole vec at output time.
+    // Clone each file into exactly one output bucket. This avoids
+    // building an intermediate string-keyed map and then re-cloning
+    // the vectors during output assembly.
     for file in staged_files {
         let mut matched = false;
         for (idx, pkg) in &packages {
@@ -158,7 +143,7 @@ pub fn resolve_packages<'a>(config: &'a Config, staged_files: &[PathBuf]) -> Vec
 
 /// Pick the right hook for a [`PackageMatch`] on a given name.
 ///
-/// Phase 35 semantics:
+/// Semantics:
 /// - `Root` match → the config's root hook for that name
 /// - `Package` match with no package-level hook → the root hook
 /// - `Package` match with a package-level hook → a **merged** hook
@@ -167,10 +152,9 @@ pub fn resolve_packages<'a>(config: &'a Config, staged_files: &[PathBuf]) -> Vec
 ///   and hook-level flags (`parallel`, `fail_fast`, `priority`, etc.)
 ///   come from the package when declared.
 ///
-/// v1.0.1: returns `Cow<'a, Hook>` so the common "no overlay" path
-/// doesn't clone the whole `Hook` (including every nested `Job`).
-/// Only the merge branch allocates. Saves ~0.5-1 ms per hook on a
-/// config with five jobs.
+/// Returns `Cow<'a, Hook>` so the common "no overlay" path can borrow
+/// the existing hook without cloning every nested job. Only the merge
+/// branch allocates.
 #[must_use]
 pub fn hook_for_match<'a>(
     config: &'a Config,
@@ -216,10 +200,25 @@ fn merge_hooks(base: &Hook, overlay: &Hook) -> Hook {
     jobs.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.name.cmp(&b.name)));
     Hook {
         name: base.name.clone(),
-        parallel: overlay.parallel || base.parallel,
-        fail_fast: overlay.fail_fast || base.fail_fast,
+        parallel: if overlay.parallel_explicit {
+            overlay.parallel
+        } else {
+            base.parallel
+        },
+        parallel_explicit: base.parallel_explicit || overlay.parallel_explicit,
+        fail_fast: if overlay.fail_fast_explicit {
+            overlay.fail_fast
+        } else {
+            base.fail_fast
+        },
+        fail_fast_explicit: base.fail_fast_explicit || overlay.fail_fast_explicit,
         parallel_limit: overlay.parallel_limit.or(base.parallel_limit),
-        stash_untracked: overlay.stash_untracked,
+        stash_untracked: if overlay.stash_untracked_explicit {
+            overlay.stash_untracked
+        } else {
+            base.stash_untracked
+        },
+        stash_untracked_explicit: base.stash_untracked_explicit || overlay.stash_untracked_explicit,
         jobs,
     }
 }
@@ -227,13 +226,13 @@ fn merge_hooks(base: &Hook, overlay: &Hook) -> Hook {
 #[cfg(test)]
 mod hook_merge_tests {
     use super::*;
-    use crate::config::{IsolateSpec, Job, Package};
+    use crate::config::{IsolateSpec, Job, Package, PackageName};
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     fn mk_job(name: &str, priority: u32) -> Job {
         Job {
-            name: name.to_owned(),
+            name: name.into(),
             run: "true".to_owned(),
             fix: None,
             glob: Vec::new(),
@@ -259,11 +258,14 @@ mod hook_merge_tests {
 
     fn mk_hook(name: &str, jobs: Vec<Job>) -> Hook {
         Hook {
-            name: name.to_owned(),
+            name: name.into(),
             parallel: false,
+            parallel_explicit: false,
             fail_fast: false,
+            fail_fast_explicit: false,
             parallel_limit: None,
             stash_untracked: false,
+            stash_untracked_explicit: false,
             jobs,
         }
     }
@@ -271,18 +273,18 @@ mod hook_merge_tests {
     fn mk_config(root_hooks: Vec<Hook>, pkgs: Vec<(String, &str, Vec<Hook>)>) -> Config {
         let mut hooks = BTreeMap::new();
         for h in root_hooks {
-            hooks.insert(h.name.clone(), h);
+            hooks.insert(h.name.to_string(), h);
         }
         let mut packages = BTreeMap::new();
         for (name, path, hooks_vec) in pkgs {
             let mut pkg_hooks = BTreeMap::new();
             for h in hooks_vec {
-                pkg_hooks.insert(h.name.clone(), h);
+                pkg_hooks.insert(h.name.to_string(), h);
             }
             packages.insert(
                 name.clone(),
                 Package {
-                    name,
+                    name: PackageName::from(name),
                     path: PathBuf::from(path),
                     hooks: pkg_hooks,
                 },
@@ -331,7 +333,7 @@ mod hook_merge_tests {
         );
         let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
         assert_eq!(merged.jobs.len(), 1);
-        assert_eq!(merged.jobs[0].name, "lint");
+        assert_eq!(merged.jobs[0].name.as_str(), "lint");
     }
 
     #[test]
@@ -347,14 +349,101 @@ mod hook_merge_tests {
         );
         let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
         assert_eq!(merged.jobs.len(), 1);
-        assert_eq!(merged.jobs[0].name, "scoped");
+        assert_eq!(merged.jobs[0].name.as_str(), "scoped");
+    }
+
+    #[test]
+    fn package_hook_can_explicitly_disable_root_flags() {
+        let mut root = mk_hook("pre-commit", vec![mk_job("lint", 0)]);
+        root.parallel = true;
+        root.parallel_explicit = true;
+        root.fail_fast = true;
+        root.fail_fast_explicit = true;
+        root.stash_untracked = true;
+        root.stash_untracked_explicit = true;
+
+        let mut pkg_hook = mk_hook("pre-commit", vec![mk_job("pkg-lint", 0)]);
+        pkg_hook.parallel_explicit = true;
+        pkg_hook.fail_fast_explicit = true;
+        pkg_hook.stash_untracked = false;
+        pkg_hook.stash_untracked_explicit = true;
+
+        let config = mk_config(
+            vec![root],
+            vec![("frontend".to_owned(), "apps/web", vec![pkg_hook])],
+        );
+        let match_ = PackageMatch::Package(
+            config.packages.get("frontend").unwrap(),
+            vec![PathBuf::from("apps/web/a.ts")],
+        );
+        let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
+
+        assert!(!merged.parallel);
+        assert!(!merged.fail_fast);
+        assert!(!merged.stash_untracked);
+        assert!(merged.parallel_explicit);
+        assert!(merged.fail_fast_explicit);
+        assert!(merged.stash_untracked_explicit);
+    }
+
+    #[test]
+    fn omitted_package_flags_preserve_root_flags() {
+        let mut root = mk_hook("pre-commit", vec![mk_job("lint", 0)]);
+        root.parallel = true;
+        root.parallel_explicit = true;
+        root.fail_fast = true;
+        root.fail_fast_explicit = true;
+        root.stash_untracked = false;
+        root.stash_untracked_explicit = true;
+
+        let pkg_hook = mk_hook("pre-commit", vec![mk_job("pkg-lint", 0)]);
+        let config = mk_config(
+            vec![root],
+            vec![("frontend".to_owned(), "apps/web", vec![pkg_hook])],
+        );
+        let match_ = PackageMatch::Package(
+            config.packages.get("frontend").unwrap(),
+            vec![PathBuf::from("apps/web/a.ts")],
+        );
+        let merged = hook_for_match(&config, &match_, "pre-commit").unwrap();
+
+        assert!(merged.parallel);
+        assert!(merged.fail_fast);
+        assert!(!merged.stash_untracked);
+        assert!(merged.parallel_explicit);
+        assert!(merged.fail_fast_explicit);
+        assert!(merged.stash_untracked_explicit);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Package, PackageName};
+    use std::collections::BTreeMap;
     use tempfile::tempdir;
+
+    fn mk_config(pkgs: Vec<(String, &str)>) -> Config {
+        let mut packages = BTreeMap::new();
+        for (name, path) in pkgs {
+            packages.insert(
+                name.clone(),
+                Package {
+                    name: PackageName::from(name),
+                    path: PathBuf::from(path),
+                    hooks: BTreeMap::new(),
+                },
+            );
+        }
+        Config {
+            meta: crate::config::Meta {
+                version: 1,
+                min_betterhook: None,
+            },
+            hooks: BTreeMap::new(),
+            packages,
+        }
+    }
 
     #[test]
     fn find_config_returns_none_when_absent() {
@@ -402,8 +491,90 @@ mod tests {
         .unwrap();
         let out = resolve(dir.path(), "pre-commit").unwrap();
         match out {
-            Dispatch::Run { hook_name, .. } => assert_eq!(hook_name, "pre-commit"),
+            Dispatch::Run { hook_name, .. } => assert_eq!(hook_name.as_str(), "pre-commit"),
             _ => panic!("expected Dispatch::Run"),
+        }
+    }
+
+    #[test]
+    fn dispatch_hook_and_noop_helpers_match_variants() {
+        assert!(Dispatch::NoConfig.hook().is_none());
+        assert!(Dispatch::HookNotConfigured.hook().is_none());
+        assert!(Dispatch::NoJobs.hook().is_none());
+        assert!(Dispatch::NoConfig.is_noop());
+        assert!(Dispatch::HookNotConfigured.is_noop());
+        assert!(Dispatch::NoJobs.is_noop());
+
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("betterhook.toml"),
+            "[hooks.pre-commit.jobs.a]\nrun = \"true\"\n",
+        )
+        .unwrap();
+        let out = resolve(dir.path(), "pre-commit").unwrap();
+        let hook = out.hook().expect("run dispatch should expose hook");
+        assert_eq!(hook.name.as_str(), "pre-commit");
+        assert_eq!(hook.jobs.len(), 1);
+        assert!(!out.is_noop());
+    }
+
+    #[test]
+    fn resolve_package_only_empty_hook_is_no_jobs() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("betterhook.toml"),
+            "[packages.frontend]\npath = \"apps/web\"\n[packages.frontend.hooks.pre-commit]\n",
+        )
+        .unwrap();
+        let out = resolve(dir.path(), "pre-commit").unwrap();
+        assert!(matches!(out, Dispatch::NoJobs));
+        assert!(out.is_noop());
+    }
+
+    #[test]
+    fn resolve_packages_omits_root_bucket_when_every_file_matches_a_package() {
+        let config = mk_config(vec![
+            ("frontend".to_owned(), "apps/web"),
+            ("api".to_owned(), "apps/api"),
+        ]);
+        let matches = resolve_packages(
+            &config,
+            &[
+                PathBuf::from("apps/web/src/app.ts"),
+                PathBuf::from("apps/api/src/main.rs"),
+            ],
+        );
+
+        assert_eq!(matches.len(), 2);
+        assert!(
+            matches
+                .iter()
+                .all(|entry| matches!(entry, PackageMatch::Package(_, files) if !files.is_empty()))
+        );
+    }
+
+    #[test]
+    fn resolve_packages_keeps_only_unmatched_files_in_root_bucket() {
+        let config = mk_config(vec![("frontend".to_owned(), "apps/web")]);
+        let matches = resolve_packages(
+            &config,
+            &[
+                PathBuf::from("README.md"),
+                PathBuf::from("apps/web/src/app.ts"),
+            ],
+        );
+
+        assert_eq!(matches.len(), 2);
+        match &matches[0] {
+            PackageMatch::Root(files) => assert_eq!(files, &vec![PathBuf::from("README.md")]),
+            PackageMatch::Package(_, _) => panic!("expected root bucket first"),
+        }
+        match &matches[1] {
+            PackageMatch::Package(pkg, files) => {
+                assert_eq!(pkg.name.as_str(), "frontend");
+                assert_eq!(files, &vec![PathBuf::from("apps/web/src/app.ts")]);
+            }
+            PackageMatch::Root(_) => panic!("expected package bucket second"),
         }
     }
 }

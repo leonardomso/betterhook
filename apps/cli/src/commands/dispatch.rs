@@ -45,7 +45,7 @@ pub async fn run(args: Args) -> miette::Result<()> {
         Dispatch::Run { config, hook_name } => {
             let hook = config
                 .hooks
-                .get(&hook_name)
+                .get(hook_name.as_str())
                 .expect("hook name validated by resolve()");
             let mut options = RunOptions::from_env();
             if !args.skip.is_empty() {

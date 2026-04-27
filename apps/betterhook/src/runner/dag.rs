@@ -118,10 +118,10 @@ pub fn build_dag(jobs: &[Job]) -> DagResult<JobGraph> {
     let mut writes_sets: Vec<Option<GlobSet>> = Vec::with_capacity(nodes.len());
     let mut reads_or_writes_sets: Vec<Option<GlobSet>> = Vec::with_capacity(nodes.len());
     for node in &nodes {
-        writes_sets.push(build_globset(&node.job.name, &node.job.writes)?);
+        writes_sets.push(build_globset(node.job.name.as_str(), &node.job.writes)?);
         let mut combined: Vec<String> = node.job.reads.clone();
         combined.extend(node.job.writes.clone());
-        reads_or_writes_sets.push(build_globset(&node.job.name, &combined)?);
+        reads_or_writes_sets.push(build_globset(node.job.name.as_str(), &combined)?);
     }
 
     for a_idx in 0..nodes.len() {
@@ -239,7 +239,7 @@ mod tests {
 
     fn job(name: &str, reads: &[&str], writes: &[&str], priority: u32) -> Job {
         Job {
-            name: name.to_owned(),
+            name: name.into(),
             run: "true".to_owned(),
             fix: None,
             glob: Vec::new(),
@@ -289,6 +289,17 @@ mod tests {
     }
 
     #[test]
+    fn edges_returns_exact_parent_child_pairs() {
+        let jobs = vec![
+            job("format", &[], &["**/*.ts"], 0),
+            job("lint", &["**/*.ts"], &[], 1),
+        ];
+        let dag = build_dag(&jobs).unwrap();
+
+        assert_eq!(dag.edges(), vec![(0, 1)]);
+    }
+
+    #[test]
     fn write_write_conflict_serializes_by_priority() {
         let jobs = vec![
             job("fmt1", &[], &["**/*.ts"], 1),
@@ -309,6 +320,14 @@ mod tests {
         ];
         let dag = build_dag(&jobs).unwrap();
         assert_eq!(dag.nodes[0].children, vec![1]);
+    }
+
+    #[test]
+    fn equal_index_never_orders_first_on_tie() {
+        let a = job("same", &[], &["a.txt"], 0);
+        let b = job("same", &[], &["a.txt"], 0);
+
+        assert!(!order_first(&a, 0, &b, 0));
     }
 
     #[test]

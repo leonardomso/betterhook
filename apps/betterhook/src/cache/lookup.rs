@@ -1,9 +1,8 @@
-//! High-level cache lookup / store built on top of `hash` + `store`.
+//! High-level cache lookup and store built on top of `hash` and `store`.
 //!
-//! Phase 29 wires the hashing primitives and the disk store into a
-//! single entry point the runner will call in phase 30. The tool
-//! binary hash is a placeholder here — phase 31 replaces it with a
-//! mise/nvm-aware `which`-based lookup.
+//! This module derives cache keys, captures input snapshots, validates
+//! freshness, and exposes async wrappers that keep disk I/O off the
+//! Tokio worker threads.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -37,10 +36,9 @@ pub fn hash_file_set(files: &[PathBuf]) -> io::Result<ContentHash> {
     Ok(ContentHash(hasher.finalize().to_hex().to_string()))
 }
 
-/// Phase 29's placeholder tool-binary hash, kept as a fallback for
-/// environments where `which`-based resolution doesn't work (CI
-/// sandboxes, containers with stripped PATH, etc.). Hashes the run
-/// string directly.
+/// Fallback tool hash for environments where binary resolution does
+/// not work (CI sandboxes, stripped PATHs, minimal containers).
+/// Hashes the run string directly.
 #[must_use]
 pub fn tool_hash_proxy(run: &str) -> ToolHash {
     ToolHash(hash_bytes(run.as_bytes()))
@@ -54,9 +52,9 @@ pub fn args_hash_from_job(job: &Job) -> ArgsHash {
     args_hash_from_fields(job)
 }
 
-/// Derive the full `CacheKey` for a `(job, files)` pair. Uses the
-/// phase-31 real tool resolver (mise/nvm-aware) and falls back to
-/// hashing the run string if binary resolution fails.
+/// Derive the full `CacheKey` for a `(job, files)` pair. Uses the real
+/// tool resolver and falls back to hashing the run string if binary
+/// resolution fails.
 pub fn derive_key(job: &Job, files: &[PathBuf]) -> io::Result<CacheKey> {
     Ok(CacheKey {
         content: hash_file_set(files)?,
@@ -120,15 +118,12 @@ pub fn inputs_fresh(cached: &[CachedInput]) -> bool {
 /// the cached result on hit, `None` on miss, or a `StoreError` on
 /// I/O / decode failure.
 ///
-/// Phase 39: entries that carry an `inputs` snapshot are rejected if
-/// any tracked file's mtime has moved on disk — this keeps commit-time
-/// hits tied to the exact on-disk state the speculative runner saw.
+/// Entries that carry an `inputs` snapshot are rejected if any tracked
+/// file's mtime has changed on disk, keeping cache hits tied to the
+/// exact on-disk state they were computed from.
 ///
-/// v1.0.1: this is now `async` and delegates every filesystem syscall
-/// to `tokio::task::spawn_blocking` so a cache lookup can't stall the
-/// parallel executor's runtime worker. Callers on the hot path are
-/// `runner::executor::execute_job_in_dag` and `run_parallel`'s cache
-/// fast path.
+/// The async wrapper delegates filesystem work to `spawn_blocking` so
+/// cache lookups do not stall the parallel executor's Tokio workers.
 pub async fn lookup(
     common_dir: &Path,
     job: &Job,
@@ -147,8 +142,8 @@ pub async fn lookup(
         })
 }
 
-/// Synchronous lookup body. Stays in this module so tests and the
-/// afl/xtask fuzz harnesses keep working without a tokio runtime.
+/// Synchronous lookup body. Kept separate so tests and fuzz harnesses
+/// can exercise the logic without a Tokio runtime.
 pub fn lookup_blocking(
     common_dir: &Path,
     job: &Job,
@@ -171,10 +166,9 @@ pub fn lookup_blocking(
 /// callers log-and-continue on error; cache writes should never fail
 /// a hook run.
 ///
-/// v1.0.1: async entry point that moves the disk write onto
-/// `spawn_blocking`. The executor writes cache entries in-line at the
-/// end of each successful spawned job, so keeping this off the tokio
-/// worker is important for parallelism.
+/// The async wrapper moves the disk write onto `spawn_blocking`. Cache
+/// writes happen inline at the end of successful jobs, so keeping them
+/// off the Tokio worker is important for parallelism.
 pub async fn store(
     common_dir: &Path,
     job: &Job,
@@ -195,9 +189,8 @@ pub async fn store(
         })
 }
 
-/// Synchronous store body. Exposed so `snapshot_inputs` + freshness
-/// tests, plus the fuzz harnesses, can exercise the code without a
-/// tokio runtime.
+/// Synchronous store body. Kept separate so freshness tests and fuzz
+/// harnesses can exercise the logic without a Tokio runtime.
 pub fn store_blocking(
     common_dir: &Path,
     job: &Job,
@@ -226,7 +219,7 @@ mod tests {
             env_map.insert((*k).to_owned(), (*v).to_owned());
         }
         Job {
-            name: "lint".to_owned(),
+            name: "lint".into(),
             run: run.to_owned(),
             fix: None,
             glob: Vec::new(),
@@ -380,9 +373,8 @@ mod tests {
 
     #[tokio::test]
     async fn async_lookup_and_store_round_trip() {
-        // v1.0.1: `lookup`/`store` are async and delegate to
-        // spawn_blocking. This test exercises that path so a future
-        // regression that drops the offloading is caught immediately.
+        // Exercise the async wrappers so regressions in the
+        // `spawn_blocking` handoff are caught here.
         let common = TempDir::new().unwrap();
         let file_dir = TempDir::new().unwrap();
         let a = file_dir.path().join("a.ts");

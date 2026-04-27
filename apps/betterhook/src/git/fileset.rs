@@ -289,6 +289,58 @@ mod tests {
     }
 
     #[test]
+    fn expand_template_stays_single_chunk_well_below_arg_max() {
+        let files: Vec<PathBuf> = (0..100)
+            .map(|i| PathBuf::from(format!("file-{i:03}.ts")))
+            .collect();
+
+        let chunks = expand_template("eslint {files}", &files);
+
+        assert_eq!(
+            chunks.len(),
+            1,
+            "moderate file lists should stay in one chunk below the real arg limit"
+        );
+        assert!(chunks[0].len() < MAX_ARG_BYTES);
+    }
+
+    #[test]
+    fn expand_template_does_not_split_at_exact_arg_max_boundary() {
+        let command = "x {files}";
+        let fixed_overhead = command.len();
+        let first_len = 65_530usize;
+        let second_len = MAX_ARG_BYTES - fixed_overhead - (first_len + 1) - 1;
+        let files = vec![
+            PathBuf::from("a".repeat(first_len)),
+            PathBuf::from("b".repeat(second_len)),
+        ];
+
+        let chunks = expand_template(command, &files);
+
+        assert_eq!(
+            chunks.len(),
+            1,
+            "exactly filling the arg budget should not trigger a split"
+        );
+    }
+
+    #[test]
+    fn expand_template_uses_additive_size_accounting() {
+        let files: Vec<PathBuf> = (0..4_000)
+            .map(|i| PathBuf::from(format!("f{i:04}")))
+            .collect();
+
+        let chunks = expand_template("x {files}", &files);
+
+        assert_eq!(
+            chunks.len(),
+            1,
+            "size accounting should stay additive for moderate file lists"
+        );
+        assert!(chunks[0].len() < MAX_ARG_BYTES);
+    }
+
+    #[test]
     fn expand_template_replaces_all_aliases() {
         let files = vec![PathBuf::from("a.ts")];
         assert_eq!(

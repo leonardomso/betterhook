@@ -1,13 +1,12 @@
 //! Cross-platform file watcher backed by `notify`.
 //!
-//! Phase 37 wraps `notify::RecommendedWatcher` in a tiny helper that
-//! emits `WatcherEvent`s on an async mpsc channel. The actual
-//! speculative runner that consumes these events lands in phase 38.
+//! Wraps `notify::RecommendedWatcher` in a small helper that emits
+//! `WatcherEvent`s on an async mpsc channel.
 //!
-//! The watcher is degradation-tolerant by design: if `notify` fails
-//! to initialize (NFS, sandboxed container, inotify limit), we log
-//! a diagnostic and return `WatcherHandle::disabled(...)` — a
-//! live but empty handle that reports `disabled_reason`.
+//! The watcher is degradation-tolerant by design: if `notify` fails to
+//! initialize (NFS, sandboxed container, inotify limit), we return
+//! `WatcherHandle::disabled(...)` — a live but inert handle that
+//! records `disabled_reason`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -28,8 +27,7 @@ pub struct WatcherEvent {
 /// Dropping the handle drops the inner `RecommendedWatcher`, which
 /// unregisters every inotify/kqueue watch.
 pub struct WatcherHandle {
-    /// Consumer half of the event channel. Phase 38's speculative
-    /// orchestrator reads from this.
+    /// Consumer half of the event channel.
     pub events: Option<mpsc::Receiver<WatcherEvent>>,
     /// `Some(reason)` means the watcher failed to start; the handle
     /// is a no-op.

@@ -37,8 +37,8 @@ pub mod shellcheck;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuiltinId(pub &'static str);
 
-/// Metadata surfaced by `betterhook builtins list` (phase 49) and the
-/// `doctor` tool-availability probe (phase 50).
+/// Metadata surfaced by `betterhook builtins list` and the `doctor`
+/// tool-availability probe.
 #[derive(Debug, Clone)]
 pub struct BuiltinMeta {
     pub id: BuiltinId,

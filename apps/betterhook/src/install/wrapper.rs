@@ -21,10 +21,16 @@ pub fn render_wrapper(betterhook_bin: &str) -> String {
 set -e
 hook_name=\"$(basename \"$0\")\"
 worktree_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\" || exit 0
+if [ -n \"${{GIT_DIR:-}}\" ]; then
+  exec \"{betterhook_bin}\" __dispatch \\
+    --hook \"$hook_name\" \\
+    --worktree \"$worktree_root\" \\
+    --git-dir \"$GIT_DIR\" \\
+    -- \"$@\"
+fi
 exec \"{betterhook_bin}\" __dispatch \\
   --hook \"$hook_name\" \\
   --worktree \"$worktree_root\" \\
-  --git-dir \"${{GIT_DIR:-}}\" \\
   -- \"$@\"
 "
     )
@@ -53,8 +59,13 @@ mod tests {
         assert!(w.starts_with("#!/usr/bin/env sh"));
         assert!(w.contains("rev-parse --show-toplevel"));
         assert!(w.contains("__dispatch"));
+        assert!(w.contains("if [ -n \"${GIT_DIR:-}\" ]; then"));
         assert!(w.contains("/usr/local/bin/betterhook"));
         assert!(w.contains("$@"));
+        assert!(w.contains("--worktree \"$worktree_root\""));
+        assert!(w.contains("--git-dir \"$GIT_DIR\""));
+        assert_eq!(w.matches("__dispatch").count(), 2);
+        assert_eq!(w.matches("--git-dir \"$GIT_DIR\"").count(), 1);
     }
 
     #[test]
@@ -70,5 +81,27 @@ mod tests {
             sha256_hex(b""),
             "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
+    }
+
+    #[test]
+    fn wrapper_fallback_exec_omits_git_dir() {
+        let w = render_wrapper("/bin/betterhook");
+        let fallback = w
+            .split("fi\n")
+            .nth(1)
+            .expect("wrapper should contain fallback exec");
+        assert!(fallback.contains("__dispatch"));
+        assert!(fallback.contains("--worktree \"$worktree_root\""));
+        assert!(!fallback.contains("--git-dir"));
+    }
+
+    #[test]
+    fn sha256_hex_is_prefixed_and_changes_with_input() {
+        let empty = sha256_hex(b"");
+        let hello = sha256_hex(b"hello");
+        assert!(empty.starts_with("sha256:"));
+        assert_eq!(empty.len(), 71);
+        assert_eq!(hello.len(), 71);
+        assert_ne!(empty, hello);
     }
 }

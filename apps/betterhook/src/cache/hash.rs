@@ -35,10 +35,8 @@ impl CacheKey {
     /// Produce the on-disk relative path for this key:
     /// `<tool-hex-first-2>/<tool-hex-rest>__<content-hex>__<args-hex>.json`.
     ///
-    /// v1.0.1: returns a `PathBuf` directly so callers can `join()` it
-    /// to a root without an intermediate `String` allocation. The
-    /// `String` version was called once per cache lookup and stayed
-    /// on the hot path between hook start and cache hit.
+    /// Returns a `PathBuf` so callers can `join()` it onto the cache
+    /// root without converting through an intermediate `String`.
     #[must_use]
     pub fn relative_path(&self) -> std::path::PathBuf {
         let (head, tail) = self.tool.0.split_at(2);

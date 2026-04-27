@@ -6,9 +6,11 @@
 mod common;
 
 use std::os::unix::fs::PermissionsExt;
+use std::process::Command;
 
 use betterhook::dispatch::{Dispatch, resolve};
 use betterhook::git::git_common_dir;
+use betterhook::install::render_wrapper;
 use betterhook::install::{InstallOptions, install, uninstall};
 
 use common::{git, init_repo, new_repo_with_worktrees, write_config};
@@ -477,6 +479,55 @@ async fn wrapper_contains_dispatch_command() {
         text.starts_with("#!/usr/bin/env sh"),
         "wrapper must start with a shebang"
     );
+    assert!(
+        text.contains("if [ -n \"${GIT_DIR:-}\" ]; then"),
+        "wrapper must only forward --git-dir when git provided it"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 15b. installed_wrapper_handles_commit_without_git_dir_env
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn installed_wrapper_handles_empty_git_dir_env() {
+    let (_d, repo) = init_repo();
+    let capture = repo.join("captured-args.txt");
+    let stub = repo.join("bh-stub.sh");
+    std::fs::write(
+        &stub,
+        format!(
+            "#!/usr/bin/env sh\nprintf '%s\\n' \"$@\" > \"{}\"\n",
+            capture.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let wrapper = repo.join("pre-commit");
+    std::fs::write(&wrapper, render_wrapper(&stub.display().to_string())).unwrap();
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let out = Command::new(&wrapper)
+        .current_dir(&repo)
+        .env_remove("GIT_DIR")
+        .output()
+        .unwrap();
+
+    assert!(
+        out.status.success(),
+        "wrapper failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let argv = std::fs::read_to_string(capture).unwrap();
+    assert!(argv.contains("__dispatch"));
+    assert!(argv.contains("--hook"));
+    assert!(argv.contains("--worktree"));
+    assert!(
+        !argv.contains("--git-dir"),
+        "wrapper must omit --git-dir when GIT_DIR is unset: {argv}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -508,7 +559,38 @@ async fn uninstall_removes_manifest() {
 }
 
 // ---------------------------------------------------------------------------
-// 17. install_manifest_contains_hook_entries
+// 17. install_autodiscovers_yaml_config
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn install_autodiscovers_yaml_config() {
+    let (_d, repo) = init_repo();
+    std::fs::write(
+        repo.join("betterhook.yml"),
+        r#"hooks:
+  pre-commit:
+    jobs:
+      lint:
+        run: "echo lint"
+"#,
+    )
+    .unwrap();
+
+    let report = install(InstallOptions {
+        worktree: Some(repo.clone()),
+        skip_unit: true,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let common = git_common_dir(&repo).await.unwrap();
+    assert_eq!(report.installed, vec!["pre-commit".to_string()]);
+    assert!(common.join("hooks").join("pre-commit").is_file());
+}
+
+// ---------------------------------------------------------------------------
+// 18. install_manifest_contains_hook_entries
 // ---------------------------------------------------------------------------
 
 #[tokio::test]

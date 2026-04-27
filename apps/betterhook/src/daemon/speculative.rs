@@ -1,14 +1,12 @@
 //! Speculative runner orchestrator.
 //!
-//! Phase 38 consumes [`WatcherEvent`](super::watcher::WatcherEvent)s
-//! from the file watcher, debounces them per path, filters to the
-//! set of `concurrent_safe` jobs whose file globs match, and emits
-//! `SpeculativeTask`s to the runner.
+//! Consumes [`WatcherEvent`](super::watcher::WatcherEvent)s from the
+//! file watcher, debounces them per path, filters to matching
+//! `concurrent_safe` jobs, and emits `SpeculativeTask`s to the runner.
 //!
-//! The actual "run job + store in CA cache" step stays in
-//! `runner::executor` — this module is just the glue between the
-//! watcher and the executor. That keeps the implementation small
-//! and easy to reason about in isolation.
+//! The actual "run job and store in the cache" work stays in
+//! `runner::executor`; this module only connects the watcher to the
+//! executor.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -20,13 +18,13 @@ use crate::runner::glob_util::build_globset_always;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::config::{Config, Hook, Job};
+use crate::config::{Config, Hook, HookName, Job};
 
 use super::watcher::WatcherEvent;
 
-/// Snapshot of the speculative runner's health. Phase 40 writes this
-/// to `<common>/betterhook/speculative-stats.json` after every handled
-/// event so `betterhook status` can read it without a socket round-trip.
+/// Snapshot of speculative-runner health written to
+/// `<common>/betterhook/speculative-stats.json` after handled events so
+/// `betterhook status` can read it without a socket round-trip.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SpeculativeStats {
     /// Number of worktree roots the daemon is currently watching.
@@ -89,7 +87,7 @@ pub struct SpeculativeTask {
     /// Absolute path of the file that changed and triggered this task.
     pub file: PathBuf,
     /// Hook name (usually `pre-commit`) whose jobs should prewarm.
-    pub hook_name: String,
+    pub hook_name: HookName,
     /// Jobs to run against `file`. Only `concurrent_safe` jobs are
     /// ever emitted here.
     pub jobs: Vec<Job>,
@@ -99,7 +97,7 @@ pub struct SpeculativeTask {
 /// pay the globset build cost once per config load.
 pub struct HookMatcher {
     /// Hook name this matcher belongs to.
-    pub hook_name: String,
+    pub hook_name: HookName,
     /// `(job, compiled_include_globset)` for every `concurrent_safe`
     /// job in the hook.
     pub jobs: Vec<(Job, GlobSet)>,
@@ -280,7 +278,7 @@ mod tests {
 
     fn mk_job(name: &str, glob: Vec<&str>, concurrent_safe: bool) -> Job {
         Job {
-            name: name.to_owned(),
+            name: name.into(),
             run: "true".to_owned(),
             fix: None,
             glob: glob.into_iter().map(str::to_owned).collect(),
@@ -306,18 +304,21 @@ mod tests {
 
     fn mk_hook(name: &str, jobs: Vec<Job>) -> Hook {
         Hook {
-            name: name.to_owned(),
+            name: name.into(),
             parallel: false,
+            parallel_explicit: false,
             fail_fast: false,
+            fail_fast_explicit: false,
             parallel_limit: None,
             stash_untracked: false,
+            stash_untracked_explicit: false,
             jobs,
         }
     }
 
     fn mk_config(root: Hook) -> Config {
         let mut hooks = BTreeMap::new();
-        hooks.insert(root.name.clone(), root);
+        hooks.insert(root.name.to_string(), root);
         Config {
             meta: Meta {
                 version: 1,
@@ -339,7 +340,7 @@ mod tests {
         );
         let m = HookMatcher::from_hook(&hook).unwrap();
         assert_eq!(m.jobs.len(), 1);
-        assert_eq!(m.jobs[0].0.name, "lint-safe");
+        assert_eq!(m.jobs[0].0.name.as_str(), "lint-safe");
     }
 
     #[test]
@@ -395,6 +396,6 @@ mod tests {
         };
         let tasks = spec.handle_event(event);
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].jobs[0].name, "lint");
+        assert_eq!(tasks[0].jobs[0].name.as_str(), "lint");
     }
 }

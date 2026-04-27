@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::rev_parse::{GitError, GitResult, run_git};
+use super::{staged_files, unstaged_files};
 
 /// A live stash entry. `pop` must be called explicitly — there is no
 /// Drop-based cleanup because tokio can't await in Drop and we don't
@@ -39,6 +40,13 @@ impl StashGuard {
                 message: String::new(),
                 created: false,
             });
+        }
+        if has_partially_staged_tracked_files(worktree).await? {
+            return Err(GitError::Porcelain(
+                "stash_untracked cannot safely run with partially staged tracked files; \
+                 commit or unstage the extra edits first"
+                    .to_owned(),
+            ));
         }
 
         let message = unique_message();
@@ -119,6 +127,17 @@ async fn has_dirty_or_untracked(worktree: &Path) -> GitResult<bool> {
     Ok(!out.is_empty())
 }
 
+async fn has_partially_staged_tracked_files(worktree: &Path) -> GitResult<bool> {
+    let staged: std::collections::HashSet<PathBuf> =
+        staged_files(worktree).await?.into_iter().collect();
+    if staged.is_empty() {
+        return Ok(false);
+    }
+    let unstaged: std::collections::HashSet<PathBuf> =
+        unstaged_files(worktree).await?.into_iter().collect();
+    Ok(staged.iter().any(|path| unstaged.contains(path)))
+}
+
 async fn find_stash_index(worktree: &Path, needle: &str) -> GitResult<Option<usize>> {
     let out = run_git(worktree, ["stash", "list"]).await?;
     let text = String::from_utf8_lossy(&out);
@@ -133,36 +152,12 @@ async fn find_stash_index(worktree: &Path, needle: &str) -> GitResult<Option<usi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::new_git_repo_with_file;
     use std::process::Command as StdCommand;
-    use tempfile::TempDir;
-
-    fn new_git_repo() -> (TempDir, PathBuf) {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path().to_path_buf();
-        let git = |args: &[&str]| {
-            let s = StdCommand::new("git")
-                .current_dir(&root)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t.t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t.t")
-                .status()
-                .unwrap();
-            assert!(s.success());
-        };
-        git(&["init", "-q", "-b", "main"]);
-        git(&["config", "user.email", "t@t.t"]);
-        git(&["config", "user.name", "t"]);
-        std::fs::write(root.join("a.ts"), "one\n").unwrap();
-        git(&["add", "."]);
-        git(&["commit", "-q", "-m", "init"]);
-        (dir, root)
-    }
 
     #[tokio::test]
     async fn clean_tree_stash_is_noop() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
         let guard = StashGuard::push(&root).await.unwrap();
         assert!(!guard.created());
         guard.pop().await.unwrap();
@@ -170,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn untracked_file_is_stashed_and_restored() {
-        let (_d, root) = new_git_repo();
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
         std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
         assert!(root.join("scratch.log").exists());
 
@@ -188,16 +183,101 @@ mod tests {
         );
     }
 
-    // NOTE on the unstaged-under-staged case:
-    //
-    // If a file is both staged AND has a further unstaged modification,
-    // `git stash push --keep-index --include-untracked` captures the
-    // unstaged delta fine, but `git stash pop` three-way merges it
-    // back over a worktree that's now sitting at the staged content —
-    // git reports that as a conflict because the stash's base was the
-    // "unstaged" version. The v0.1 scope here is limited to the
-    // untracked-file case (lefthook #833), which is the realistic
-    // workload. A future phase will switch to a patch-based approach
-    // (`git diff --binary > patch`, `git checkout -- .`, run,
-    // `git apply patch`) to cover the full matrix.
+    #[test]
+    fn unique_message_is_prefixed_and_unique() {
+        let first = unique_message();
+        let second = unique_message();
+        assert!(first.starts_with("betterhook-stash-"));
+        assert!(second.starts_with("betterhook-stash-"));
+        assert_ne!(first, second);
+    }
+
+    #[tokio::test]
+    async fn tracked_dirty_file_is_stashed_and_restored() {
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
+        std::fs::write(root.join("a.ts"), "dirty\n").unwrap();
+
+        let guard = StashGuard::push(&root).await.unwrap();
+        assert!(guard.created());
+        assert!(guard.message().starts_with("betterhook-stash-"));
+        assert_eq!(std::fs::read_to_string(root.join("a.ts")).unwrap(), "one\n");
+
+        guard.pop().await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.ts")).unwrap(),
+            "dirty\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn pop_refuses_when_stash_disappears() {
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
+        std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
+        let guard = StashGuard::push(&root).await.unwrap();
+        assert!(guard.created());
+
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args(["stash", "drop", "stash@{0}"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let msg = format!("{}", guard.pop().await.unwrap_err());
+        assert!(
+            msg.contains("disappeared"),
+            "expected disappearance error, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pop_refuses_when_our_stash_is_not_on_top() {
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
+        std::fs::write(root.join("scratch.log"), "secret\n").unwrap();
+        let guard = StashGuard::push(&root).await.unwrap();
+        assert!(guard.created());
+
+        std::fs::write(root.join("other.log"), "later\n").unwrap();
+        let status = StdCommand::new("git")
+            .current_dir(&root)
+            .args([
+                "stash",
+                "push",
+                "--include-untracked",
+                "--message",
+                "other-stash",
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let msg = format!("{}", guard.pop().await.unwrap_err());
+        assert!(
+            msg.contains("stash@{1}"),
+            "expected top-of-stack refusal, got: {msg}"
+        );
+        assert!(
+            msg.contains("refusing to pop"),
+            "expected refusal wording, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn partially_staged_tracked_file_is_rejected() {
+        let (_d, root) = new_git_repo_with_file("a.ts", "one\n");
+        std::fs::write(root.join("a.ts"), "staged\n").unwrap();
+        StdCommand::new("git")
+            .current_dir(&root)
+            .args(["add", "a.ts"])
+            .status()
+            .unwrap();
+        std::fs::write(root.join("a.ts"), "unstaged\n").unwrap();
+
+        let err = StashGuard::push(&root).await.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("partially staged"),
+            "expected partial-stage refusal, got: {msg}"
+        );
+    }
 }

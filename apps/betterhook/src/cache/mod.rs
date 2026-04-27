@@ -6,9 +6,9 @@
 //! cached `OutputEvent`s through the multiplexer instead — this is
 //! where the "faster than hk" v1 claim is earned.
 //!
-//! Phase 24 ships the scaffolding: hashing primitives, the disk
-//! layout, and the store round-trip. Runtime integration with the
-//! runner lands in phases 29–31.
+//! This module owns the hashing primitives, on-disk layout, and the
+//! high-level lookup/store helpers the runner uses to replay cached
+//! hook results.
 
 pub mod hash;
 pub mod lookup;

@@ -21,7 +21,7 @@ use betterhook::runner::output::DiagnosticSeverity;
 
 fn job(name: &str, reads: &[&str], writes: &[&str], priority: u32) -> Job {
     Job {
-        name: name.to_owned(),
+        name: name.into(),
         run: "true".to_owned(),
         fix: None,
         glob: Vec::new(),
@@ -220,8 +220,8 @@ mod cache {
 
     #[test]
     fn empty_inputs_freshness_is_always_true() {
-        // Phase 39 left an explicit "if !result.inputs.is_empty()" gate;
-        // this enforces the surface contract of `inputs_fresh` itself.
+        // An empty snapshot means there is nothing to invalidate, so the
+        // freshness helper must stay true.
         assert!(inputs_fresh(&[]));
     }
 

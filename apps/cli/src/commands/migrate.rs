@@ -1,8 +1,7 @@
-//! Hidden compatibility alias — `betterhook migrate` was renamed to
-//! `betterhook import --from-format lefthook` in phase 51. This thin
-//! shim forwards the v0 flags to the import command so existing scripts
-//! and docs that say `betterhook migrate --from lefthook.yml` keep
-//! working for one release.
+//! Hidden compatibility alias for the old `betterhook migrate` entrypoint.
+//! This shim forwards the legacy flags to `betterhook import --from-format
+//! lefthook` so existing scripts keep working while callers move to the
+//! newer command name.
 
 use std::path::PathBuf;
 
