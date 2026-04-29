@@ -4,27 +4,53 @@ on:
   push:
     branches: [master]
 
-permissions:
-  pull-requests: write
-  contents: write
-
 jobs:
-  release-plz:
-    name: Release-plz
+  release-pr:
+    name: Open release PR
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@9d47f7b6df25dc1a6e7a4e881cff7fda5f847bfc # v2.9.1
 
-      - name: Run release-plz
-        uses: release-plz/action@v0.5
+      - name: Run release-plz release-pr
+        uses: release-plz/action@1efcf746a4800bfb56418deff9c7f7f46b6e82f1 # v0.5.119
         with:
           command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs: release-pr
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@9d47f7b6df25dc1a6e7a4e881cff7fda5f847bfc # v2.9.1
+
+      - name: Run release-plz release
+        uses: release-plz/action@1efcf746a4800bfb56418deff9c7f7f46b6e82f1 # v0.5.119
+        with:
+          command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
