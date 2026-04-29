@@ -2,14 +2,13 @@
 // Downloads the platform-specific betterhook binary from GitHub Releases
 // and places it at bin/betterhook-native. Runs as a postinstall script.
 //
-// The binary ships as a .tar.gz archive. After download we extract it,
-// verify the file is executable, and clean up the archive.
+// The binary ships as a .tar.gz archive. We extract it in-process using
+// Node's built-in zlib + tar header parsing (no external `tar` binary).
 
 const https = require("https");
-const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+const zlib = require("zlib");
 
 const VERSION = require("./package.json").version;
 const BASE_URL = `https://github.com/leonardomso/betterhook/releases/download/v${VERSION}`;
@@ -20,6 +19,9 @@ const PLATFORM_MAP = {
   "linux-arm64": "betterhook-aarch64-unknown-linux-gnu",
   "linux-x64": "betterhook-x86_64-unknown-linux-gnu",
 };
+
+// Maximum redirects to follow (GitHub typically uses 1-2).
+const MAX_REDIRECTS = 5;
 
 function getPlatformKey() {
   const key = `${process.platform}-${process.arch}`;
@@ -36,20 +38,30 @@ function getPlatformKey() {
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {
-    const follow = (url) => {
-      const client = url.startsWith("https") ? https : http;
-      client
-        .get(url, { headers: { "User-Agent": "betterhook-npm" } }, (res) => {
+    let redirects = 0;
+    const follow = (currentUrl) => {
+      if (!currentUrl.startsWith("https://")) {
+        reject(new Error(`refusing non-HTTPS redirect: ${currentUrl}`));
+        return;
+      }
+      if (redirects++ > MAX_REDIRECTS) {
+        reject(new Error(`too many redirects (>${MAX_REDIRECTS})`));
+        return;
+      }
+      https
+        .get(currentUrl, { headers: { "User-Agent": "betterhook-npm" } }, (res) => {
           if (
             res.statusCode >= 300 &&
             res.statusCode < 400 &&
             res.headers.location
           ) {
-            follow(res.headers.location);
+            // Resolve relative redirects against the current URL.
+            const next = new URL(res.headers.location, currentUrl).href;
+            follow(next);
             return;
           }
           if (res.statusCode !== 200) {
-            reject(new Error(`HTTP ${res.statusCode} from ${url}`));
+            reject(new Error(`HTTP ${res.statusCode} from ${currentUrl}`));
             return;
           }
           const file = fs.createWriteStream(dest);
@@ -59,6 +71,42 @@ function download(url, dest) {
         .on("error", reject);
     };
     follow(url);
+  });
+}
+
+// Minimal tar extractor: reads a .tar.gz and extracts the first regular
+// file. betterhook release archives contain exactly one file.
+function extractFirstFile(archivePath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const input = fs.createReadStream(archivePath);
+    const gunzip = zlib.createGunzip();
+    const chunks = [];
+
+    gunzip.on("data", (chunk) => chunks.push(chunk));
+    gunzip.on("end", () => {
+      const tar = Buffer.concat(chunks);
+      // Tar header: first 512 bytes. File name at offset 0 (100 bytes),
+      // size at offset 124 (12 bytes, octal, NUL-terminated).
+      if (tar.length < 512) {
+        reject(new Error("tar archive too small"));
+        return;
+      }
+      const sizeStr = tar.subarray(124, 136).toString("ascii").replace(/\0/g, "").trim();
+      const fileSize = parseInt(sizeStr, 8);
+      if (isNaN(fileSize) || fileSize <= 0) {
+        reject(new Error(`invalid tar entry size: '${sizeStr}'`));
+        return;
+      }
+      if (tar.length < 512 + fileSize) {
+        reject(new Error("tar archive truncated"));
+        return;
+      }
+      fs.writeFileSync(outputPath, tar.subarray(512, 512 + fileSize));
+      resolve();
+    });
+    gunzip.on("error", reject);
+    input.on("error", reject);
+    input.pipe(gunzip);
   });
 }
 
@@ -75,20 +123,8 @@ async function main() {
   console.log(`betterhook: downloading ${archiveName}`);
   await download(url, archivePath);
 
-  // Extract the binary from the tar.gz archive.
-  // The archive contains a single file named after the asset.
-  execSync(`tar xzf "${archivePath}" -C "${binDir}"`, { stdio: "pipe" });
-
-  // Rename the extracted binary to a stable name.
-  const extracted = path.join(binDir, asset);
-  if (fs.existsSync(extracted)) {
-    fs.renameSync(extracted, nativeBinary);
-  } else {
-    // Fallback: if tar extracted with a different structure, find it.
-    console.error(`betterhook: expected ${extracted} after extraction`);
-    process.exit(1);
-  }
-
+  // Extract in-process (no external tar dependency).
+  await extractFirstFile(archivePath, nativeBinary);
   fs.chmodSync(nativeBinary, 0o755);
 
   // Clean up the archive.

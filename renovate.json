@@ -16,6 +16,10 @@
   "github-actions": {
     "enabled": true
   },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 9am on monday"]
+  },
   "packageRules": [
     {
       "description": "Group all Rust dependency updates into one PR",
@@ -42,13 +46,6 @@
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
-    },
-    {
-      "description": "Weekly Cargo.lock refresh",
-      "matchManagers": ["cargo"],
-      "matchUpdateTypes": ["lockFileMaintenance"],
-      "enabled": true,
-      "schedule": ["before 9am on monday"]
     }
   ]
 }

@@ -66,8 +66,6 @@ betterhook status            # check everything looks right
 
 Your next `git commit` will run the jobs in `betterhook.toml`.
 
-Your next `git commit` will run the jobs in `betterhook.toml`.
-
 ### Migrating from lefthook?
 
 ```sh

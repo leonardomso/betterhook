@@ -77,7 +77,7 @@ jobs:
         run: cargo install cargo-deny --locked
 
       - name: cargo deny check
-        run: cargo deny check advisories licenses
+        run: cargo deny check
 
   fuzz-smoke:
     name: fuzz-smoke

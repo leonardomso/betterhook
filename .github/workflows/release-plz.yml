@@ -34,6 +34,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     permissions:
+      pull-requests: read
       contents: write
     needs: release-pr
     steps:

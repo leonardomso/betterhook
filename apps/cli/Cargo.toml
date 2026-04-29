@@ -18,7 +18,7 @@ name = "betterhook"
 path = "src/main.rs"
 
 [dependencies]
-betterhook = { path = "../betterhook" }
+betterhook = { path = "../betterhook", version = "0.0.2" }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 tokio = { workspace = true }
