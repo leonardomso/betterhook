@@ -20,10 +20,10 @@ jobs:
         with:
           toolchain: stable
 
-      - uses: Swatinem/rust-cache@9d47f7b6df25dc1a6e7a4e881cff7fda5f847bfc # v2.9.1
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
 
       - name: Run release-plz release-pr
-        uses: release-plz/action@1efcf746a4800bfb56418deff9c7f7f46b6e82f1 # v0.5.119
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5
         with:
           command: release-pr
         env:
@@ -45,10 +45,10 @@ jobs:
         with:
           toolchain: stable
 
-      - uses: Swatinem/rust-cache@9d47f7b6df25dc1a6e7a4e881cff7fda5f847bfc # v2.9.1
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
 
       - name: Run release-plz release
-        uses: release-plz/action@1efcf746a4800bfb56418deff9c7f7f46b6e82f1 # v0.5.119
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5
         with:
           command: release
         env:
