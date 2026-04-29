@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 mod commands;
 mod exit_codes;
@@ -41,12 +41,20 @@ enum Command {
     Builtins(commands::builtins::Args),
     /// Run a pre-flight health check across the install, config, cache, and watcher.
     Doctor(commands::doctor::Args),
+    /// Generate shell completions for bash, zsh, fish, elvish, or powershell.
+    Completions(commands::completions::Args),
     /// Internal: invoked by the installed wrapper script. Not for direct use.
     #[command(name = "__dispatch", hide = true)]
     Dispatch(commands::dispatch::Args),
     /// Internal: run the coordinator daemon. Spawned by the lock client.
     #[command(hide = true)]
     Serve(commands::serve::Args),
+}
+
+/// Build the clap [`clap::Command`] for shell completion generation.
+#[must_use]
+pub fn cli() -> clap::Command {
+    Cli::command()
 }
 
 #[tokio::main]
@@ -65,6 +73,10 @@ async fn main() -> miette::Result<()> {
         Command::Cache(args) => commands::cache::run(args).await,
         Command::Builtins(args) => commands::builtins::run(args),
         Command::Doctor(args) => commands::doctor::run(args).await,
+        Command::Completions(args) => {
+            commands::completions::run(&args);
+            Ok(())
+        }
         Command::Dispatch(args) => commands::dispatch::run(args).await,
         Command::Serve(args) => commands::serve::run(args).await,
     }

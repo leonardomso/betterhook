@@ -71,8 +71,36 @@ jobs:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}.tar.gz
 
+  completions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+
+      - name: Build CLI
+        run: cargo build --release -p betterhook-cli
+
+      - name: Generate shell completions
+        run: |
+          mkdir -p completions
+          ./target/release/betterhook completions bash > completions/betterhook.bash
+          ./target/release/betterhook completions zsh > completions/_betterhook
+          ./target/release/betterhook completions fish > completions/betterhook.fish
+          tar czf betterhook-completions.tar.gz -C completions .
+
+      - name: Upload completions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: betterhook-completions
+          path: betterhook-completions.tar.gz
+
   release:
-    needs: build
+    needs: [build, completions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -106,6 +134,7 @@ jobs:
             artifacts/betterhook-aarch64-unknown-linux-gnu/betterhook-aarch64-unknown-linux-gnu.tar.gz
             artifacts/betterhook-x86_64-apple-darwin/betterhook-x86_64-apple-darwin.tar.gz
             artifacts/betterhook-aarch64-apple-darwin/betterhook-aarch64-apple-darwin.tar.gz
+            artifacts/betterhook-completions/betterhook-completions.tar.gz
             artifacts/checksums-sha256.txt
           draft: false
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}

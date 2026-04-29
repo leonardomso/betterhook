@@ -20,6 +20,7 @@ path = "src/main.rs"
 [dependencies]
 betterhook = { path = "../betterhook" }
 clap = { workspace = true }
+clap_complete = { workspace = true }
 tokio = { workspace = true }
 miette = { workspace = true }
 serde = { workspace = true }

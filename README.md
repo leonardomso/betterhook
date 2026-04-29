@@ -41,17 +41,30 @@ git commit -am "go"       # hooks run, per-worktree, correctly
 
 ---
 
+## Install
+
+```sh
+# From crates.io
+cargo install betterhook-cli
+
+# Or with npm
+npm install -g betterhook
+
+# Or from source
+git clone https://github.com/leonardomso/betterhook && cd betterhook
+cargo install --path apps/cli
+```
+
 ## Quickstart
 
 ```sh
-# Install from source (Rust 1.86+)
-cargo install --path apps/cli
-
-# In your repo
-betterhook init
-betterhook install
-betterhook status          # check everything looks right
+cd your-repo
+betterhook init              # writes a starter betterhook.toml
+betterhook install           # installs the hook wrapper into .git/hooks/
+betterhook status            # check everything looks right
 ```
+
+Your next `git commit` will run the jobs in `betterhook.toml`.
 
 Your next `git commit` will run the jobs in `betterhook.toml`.
 
@@ -205,7 +218,22 @@ betterhook doctor                  # health check: install, config, cache, tools
 | `betterhook import` | Convert config from lefthook, husky, hk, or pre-commit |
 | `betterhook cache` | Inspect, verify, or clear the content-addressable cache |
 | `betterhook builtins` | List or show builtin linter/formatter wrappers |
+| `betterhook completions <shell>` | Generate shell completions (bash, zsh, fish, elvish, powershell) |
 
+### Shell completions
+
+```sh
+# bash
+betterhook completions bash > ~/.local/share/bash-completion/completions/betterhook
+
+# zsh
+betterhook completions zsh > ~/.zfunc/_betterhook
+
+# fish
+betterhook completions fish > ~/.config/fish/completions/betterhook.fish
+```
+
+Pre-built completions for bash, zsh, and fish are included in every [GitHub Release](https://github.com/leonardomso/betterhook/releases) as `betterhook-completions.tar.gz`.
 ## Exit codes
 
 Stable across releases. Agents can rely on these.
