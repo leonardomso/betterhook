@@ -23,7 +23,9 @@ allow = [
 confidence-threshold = 0.8
 
 [bans]
-multiple-versions = "warn"
+# Transitive deps (notify, miette) pull in duplicate bitflags and
+# unicode-width versions. Allow until upstream consolidates.
+multiple-versions = "allow"
 wildcards = "deny"
 
 [sources]
