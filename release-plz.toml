@@ -6,8 +6,6 @@
 changelog_update = true
 # PR title format.
 pr_name = "chore: release v{{ version }}"
-# Commit message on the release PR.
-release_commit_message = "chore: release v{{ version }}"
 # Create git tags on release.
 git_tag_enable = true
 # Publish to crates.io on merge.
