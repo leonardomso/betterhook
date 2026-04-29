@@ -1,12 +1,23 @@
 {
   "name": "betterhook",
   "version": "0.0.2",
-  "description": "Memory-efficient, worktree-native git hooks manager built for the AI agent era.",
+  "description": "Fast, worktree-native git hooks manager for parallel AI agents.",
   "license": "MIT",
+  "author": "Leonardo Maldonado",
   "repository": {
     "type": "git",
     "url": "https://github.com/leonardomso/betterhook"
   },
+  "homepage": "https://github.com/leonardomso/betterhook",
+  "keywords": [
+    "git",
+    "hooks",
+    "git-hooks",
+    "pre-commit",
+    "worktree",
+    "linter",
+    "formatter"
+  ],
   "bin": {
     "betterhook": "bin/betterhook"
   },
@@ -16,10 +27,16 @@
   "engines": {
     "node": ">=18"
   },
-  "os": ["darwin", "linux"],
-  "cpu": ["x64", "arm64"],
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
   "files": [
-    "bin/",
+    "bin/betterhook",
     "install.js",
     "README.md"
   ]

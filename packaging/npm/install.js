@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Downloads the platform-specific betterhook binary from GitHub Releases
-// and places it at bin/betterhook. Runs as a postinstall script.
+// and places it at bin/betterhook-native. Runs as a postinstall script.
 //
-// Follows the same pattern as @biomejs/biome and oxlint: thin npm
-// wrapper that delegates to a native binary.
+// The binary ships as a .tar.gz archive. After download we extract it,
+// verify the file is executable, and clean up the archive.
 
 const https = require("https");
+const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
@@ -20,25 +21,30 @@ const PLATFORM_MAP = {
   "linux-x64": "betterhook-x86_64-unknown-linux-gnu",
 };
 
-function getPlatformBinary() {
+function getPlatformKey() {
   const key = `${process.platform}-${process.arch}`;
-  const binary = PLATFORM_MAP[key];
-  if (!binary) {
+  const asset = PLATFORM_MAP[key];
+  if (!asset) {
     console.error(
       `betterhook: unsupported platform ${key}. ` +
         `Supported: ${Object.keys(PLATFORM_MAP).join(", ")}`
     );
     process.exit(1);
   }
-  return binary;
+  return asset;
 }
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {
     const follow = (url) => {
-      https
+      const client = url.startsWith("https") ? https : http;
+      client
         .get(url, { headers: { "User-Agent": "betterhook-npm" } }, (res) => {
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          if (
+            res.statusCode >= 300 &&
+            res.statusCode < 400 &&
+            res.headers.location
+          ) {
             follow(res.headers.location);
             return;
           }
@@ -48,9 +54,7 @@ function download(url, dest) {
           }
           const file = fs.createWriteStream(dest);
           res.pipe(file);
-          file.on("finish", () => {
-            file.close(resolve);
-          });
+          file.on("finish", () => file.close(resolve));
         })
         .on("error", reject);
     };
@@ -59,19 +63,44 @@ function download(url, dest) {
 }
 
 async function main() {
-  const binary = getPlatformBinary();
-  const url = `${BASE_URL}/${binary}`;
-  const dest = path.join(__dirname, "bin", "betterhook");
+  const asset = getPlatformKey();
+  const archiveName = `${asset}.tar.gz`;
+  const url = `${BASE_URL}/${archiveName}`;
+  const binDir = path.join(__dirname, "bin");
+  const archivePath = path.join(binDir, archiveName);
+  const nativeBinary = path.join(binDir, "betterhook-native");
 
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.mkdirSync(binDir, { recursive: true });
 
-  console.log(`betterhook: downloading ${url}`);
-  await download(url, dest);
-  fs.chmodSync(dest, 0o755);
-  console.log(`betterhook: installed to ${dest}`);
+  console.log(`betterhook: downloading ${archiveName}`);
+  await download(url, archivePath);
+
+  // Extract the binary from the tar.gz archive.
+  // The archive contains a single file named after the asset.
+  execSync(`tar xzf "${archivePath}" -C "${binDir}"`, { stdio: "pipe" });
+
+  // Rename the extracted binary to a stable name.
+  const extracted = path.join(binDir, asset);
+  if (fs.existsSync(extracted)) {
+    fs.renameSync(extracted, nativeBinary);
+  } else {
+    // Fallback: if tar extracted with a different structure, find it.
+    console.error(`betterhook: expected ${extracted} after extraction`);
+    process.exit(1);
+  }
+
+  fs.chmodSync(nativeBinary, 0o755);
+
+  // Clean up the archive.
+  fs.unlinkSync(archivePath);
+
+  console.log(`betterhook: installed to ${nativeBinary}`);
 }
 
 main().catch((err) => {
   console.error(`betterhook: install failed: ${err.message}`);
+  console.error(
+    "You can install betterhook manually from https://github.com/leonardomso/betterhook/releases"
+  );
   process.exit(1);
 });

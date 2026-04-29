@@ -1,11 +1,20 @@
 #!/usr/bin/env node
-// Thin wrapper that execs the native binary downloaded by install.js.
+// Thin shim that execs the native binary downloaded by install.js.
 const { execFileSync } = require("child_process");
 const path = require("path");
+const fs = require("fs");
 
-const binary = path.join(__dirname, "betterhook");
+const native = path.join(__dirname, "betterhook-native");
+
+if (!fs.existsSync(native)) {
+  console.error(
+    "betterhook: native binary not found. Run `npm rebuild betterhook` or reinstall."
+  );
+  process.exit(1);
+}
+
 try {
-  execFileSync(binary, process.argv.slice(2), { stdio: "inherit" });
+  execFileSync(native, process.argv.slice(2), { stdio: "inherit" });
 } catch (err) {
   process.exit(err.status || 1);
 }
