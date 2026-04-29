@@ -5,7 +5,18 @@
 //! the only handle to stdout/stderr, so interleaved output from
 //! parallel jobs stays line-atomic. The same event stream can also be
 //! drained as NDJSON for agents.
+//!
+//! Performance notes:
+//! - The TTY writer locks stdout/stderr once and writes all fields
+//!   with `write!` directly, avoiding intermediate `String`
+//!   allocations from `format!` and `.to_string()`.
+//! - The JSON writer uses `serde_json::to_writer` to serialize
+//!   directly into a locked stdout, skipping the `to_string` heap
+//!   allocation.
+//! - The `job` field in `OutputEvent::Line` uses `Arc<str>` to avoid
+//!   cloning a heap `String` on every output line.
 
+use std::io::Write;
 use std::time::Duration;
 
 use owo_colors::{AnsiColors, OwoColorize};
@@ -130,34 +141,58 @@ pub fn sink(kind: SinkKind) -> (mpsc::Sender<OutputEvent>, tokio::task::JoinHand
 
 async fn tty_writer(mut rx: mpsc::Receiver<OutputEvent>) {
     while let Some(ev) = rx.recv().await {
-        write_event(&ev);
+        write_event_tty(&ev);
     }
 }
 
 async fn json_writer(mut rx: mpsc::Receiver<OutputEvent>) {
     while let Some(ev) = rx.recv().await {
-        match serde_json::to_string(&ev) {
-            Ok(line) => println!("{line}"),
-            Err(e) => eprintln!("betterhook: json serialize error: {e}"),
-        }
+        write_event_json(&ev);
     }
 }
 
+/// Write a single event as NDJSON directly to locked stdout.
+/// Uses `to_writer` to avoid the intermediate `String` from `to_string`.
+fn write_event_json(ev: &OutputEvent) {
+    let stdout = std::io::stdout();
+    let mut lock = stdout.lock();
+    if serde_json::to_writer(&mut lock, ev).is_ok() {
+        let _ = lock.write_all(b"\n");
+    }
+}
+
+/// Write a single event as colorized TTY output.
+///
+/// All writes go through a locked stderr (or stdout for `Line::Stdout`)
+/// to avoid per-call lock overhead. The owo-colors `Display` impls
+/// write ANSI escapes directly into the formatter without allocating.
 #[allow(clippy::too_many_lines)]
-fn write_event(ev: &OutputEvent) {
+fn write_event_tty(ev: &OutputEvent) {
     match ev {
         OutputEvent::JobStarted { job, cmd } => {
             let c = color_for(job);
-            eprintln!("{} {} {}", "▶".color(c), job.color(c).bold(), cmd.dimmed());
+            let stderr = std::io::stderr();
+            let mut w = stderr.lock();
+            let _ = writeln!(
+                w,
+                "{} {} {}",
+                "▶".color(c),
+                job.color(c).bold(),
+                cmd.dimmed()
+            );
         }
         OutputEvent::Line { job, stream, line } => {
             let c = color_for(job);
             match stream {
                 Stream::Stdout => {
-                    println!("[{}] {}", job.color(c), line);
+                    let stdout = std::io::stdout();
+                    let mut w = stdout.lock();
+                    let _ = writeln!(w, "[{}] {line}", job.color(c));
                 }
                 Stream::Stderr => {
-                    eprintln!("[{}] {}", job.color(c), line);
+                    let stderr = std::io::stderr();
+                    let mut w = stderr.lock();
+                    let _ = writeln!(w, "[{}] {line}", job.color(c));
                 }
             }
         }
@@ -167,22 +202,32 @@ fn write_event(ev: &OutputEvent) {
             duration,
         } => {
             let c = color_for(job);
-            let marker = if *exit == 0 {
-                "✓".green().to_string()
+            let stderr = std::io::stderr();
+            let mut w = stderr.lock();
+            if *exit == 0 {
+                let _ = writeln!(
+                    w,
+                    "{} {} ({}ms, exit {exit})",
+                    "✓".green(),
+                    job.color(c).bold(),
+                    duration.as_millis(),
+                );
             } else {
-                "✗".red().to_string()
-            };
-            eprintln!(
-                "{} {} ({}ms, exit {})",
-                marker,
-                job.color(c).bold(),
-                duration.as_millis(),
-                exit
-            );
+                let _ = writeln!(
+                    w,
+                    "{} {} ({}ms, exit {exit})",
+                    "✗".red(),
+                    job.color(c).bold(),
+                    duration.as_millis(),
+                );
+            }
         }
         OutputEvent::JobSkipped { job, reason } => {
             let c = color_for(job);
-            eprintln!(
+            let stderr = std::io::stderr();
+            let mut w = stderr.lock();
+            let _ = writeln!(
+                w,
                 "{} {} skipped ({})",
                 "∘".dimmed(),
                 job.color(c).bold(),
@@ -191,10 +236,13 @@ fn write_event(ev: &OutputEvent) {
         }
         OutputEvent::JobCacheHit { job, files } => {
             let c = color_for(job);
-            eprintln!(
+            let stderr = std::io::stderr();
+            let mut w = stderr.lock();
+            let _ = writeln!(
+                w,
                 "{} {} cache hit ({files} files)",
                 "⚡".color(c),
-                job.color(c).bold(),
+                job.color(c).bold()
             );
         }
         OutputEvent::Diagnostic {
@@ -207,26 +255,38 @@ fn write_event(ev: &OutputEvent) {
             rule,
         } => {
             let c = color_for(job);
-            let sev = match severity {
-                DiagnosticSeverity::Error => "error".red().bold().to_string(),
-                DiagnosticSeverity::Warning => "warn".yellow().bold().to_string(),
-                DiagnosticSeverity::Info => "info".blue().bold().to_string(),
-                DiagnosticSeverity::Hint => "hint".cyan().to_string(),
-            };
-            let loc = match (line, column) {
-                (Some(l), Some(col)) => format!("{file}:{l}:{col}"),
-                (Some(l), None) => format!("{file}:{l}"),
-                _ => file.clone(),
-            };
-            let rule_tag = rule.as_ref().map(|r| format!(" [{r}]")).unwrap_or_default();
-            eprintln!(
-                "[{}] {} {}{} {}",
-                job.color(c).bold(),
-                sev,
-                loc,
-                rule_tag,
-                message
-            );
+            let stderr = std::io::stderr();
+            let mut w = stderr.lock();
+            let _ = write!(w, "[{}] ", job.color(c).bold());
+            match severity {
+                DiagnosticSeverity::Error => {
+                    let _ = write!(w, "{}", "error".red().bold());
+                }
+                DiagnosticSeverity::Warning => {
+                    let _ = write!(w, "{}", "warn".yellow().bold());
+                }
+                DiagnosticSeverity::Info => {
+                    let _ = write!(w, "{}", "info".blue().bold());
+                }
+                DiagnosticSeverity::Hint => {
+                    let _ = write!(w, "{}", "hint".cyan());
+                }
+            }
+            match (line, column) {
+                (Some(l), Some(col)) => {
+                    let _ = write!(w, " {file}:{l}:{col}");
+                }
+                (Some(l), None) => {
+                    let _ = write!(w, " {file}:{l}");
+                }
+                _ => {
+                    let _ = write!(w, " {file}");
+                }
+            }
+            if let Some(r) = rule {
+                let _ = write!(w, " [{r}]");
+            }
+            let _ = writeln!(w, " {message}");
         }
         OutputEvent::Summary {
             ok,
@@ -234,16 +294,23 @@ fn write_event(ev: &OutputEvent) {
             jobs_skipped,
             total,
         } => {
-            let marker = if *ok {
-                "OK".green().bold().to_string()
+            let stderr = std::io::stderr();
+            let mut w = stderr.lock();
+            if *ok {
+                let _ = writeln!(
+                    w,
+                    "── {} — {jobs_run} run, {jobs_skipped} skipped, {}ms",
+                    "OK".green().bold(),
+                    total.as_millis(),
+                );
             } else {
-                "FAIL".red().bold().to_string()
-            };
-            eprintln!(
-                "── {} — {jobs_run} run, {jobs_skipped} skipped, {}ms",
-                marker,
-                total.as_millis()
-            );
+                let _ = writeln!(
+                    w,
+                    "── {} — {jobs_run} run, {jobs_skipped} skipped, {}ms",
+                    "FAIL".red().bold(),
+                    total.as_millis(),
+                );
+            }
         }
     }
 }
