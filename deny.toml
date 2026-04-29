@@ -26,6 +26,9 @@ confidence-threshold = 0.8
 # Transitive deps (notify, miette) pull in duplicate bitflags and
 # unicode-width versions. Allow until upstream consolidates.
 multiple-versions = "allow"
+# xtask (publish = false) uses a path-only dep on betterhook.
+# allow-wildcard-paths lets private crates use versionless path deps.
+allow-wildcard-paths = true
 wildcards = "deny"
 
 [sources]
