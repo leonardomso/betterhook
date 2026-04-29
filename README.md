@@ -6,9 +6,9 @@ A git hooks manager that actually works with worktrees.
 
 ## The problem
 
-Git hooks are simple: put a script in `.git/hooks/`, git runs it before your commit. Every hooks manager (lefthook, husky, pre-commit) works fine -- until you start using [git worktrees](https://git-scm.com/docs/git-worktree).
+Git hooks are simple: put a script in `.git/hooks/`, git runs it before your commit. Every hooks manager (lefthook, husky, pre-commit) works fine until you start using [git worktrees](https://git-scm.com/docs/git-worktree).
 
-Worktrees let you have multiple checkouts of the same repo side by side. Each worktree has its own working directory and branch, but they all share one `.git` directory. This is how teams run multiple AI coding agents in parallel -- each agent gets its own worktree, writes code on its own branch, and opens its own PR.
+Worktrees let you have multiple checkouts of the same repo side by side. Each worktree has its own working directory and branch, but they all share one `.git` directory. This is how teams run multiple AI coding agents in parallel: each agent gets its own worktree, writes code on its own branch, and opens its own PR.
 
 The moment two worktrees try to run hooks at the same time, things break:
 
@@ -74,7 +74,7 @@ betterhook import --from .husky/pre-commit --from-format husky
 
 ## Configuration
 
-betterhook reads `betterhook.toml` by default (also supports `.yml`, `.yaml`, `.json`, `.kdl` -- all four parse into the same internal representation).
+betterhook reads `betterhook.toml` by default. It also supports `.yml`, `.yaml`, `.json`, and `.kdl`. All four formats parse into the same internal representation.
 
 ```toml
 [meta]
@@ -126,7 +126,7 @@ File lists are parsed from NUL-delimited git output, so filenames with spaces, u
 extends = [".betterhook/base.toml"]
 ```
 
-Extends chains resolve depth-first with overlay-wins semantics. Cross-format extends works (a TOML file can extend a YAML file). A `betterhook.local.toml` next to your main config is auto-merged with highest precedence -- useful for per-machine overrides.
+Extends chains resolve depth-first with overlay-wins semantics. Cross-format extends works (a TOML file can extend a YAML file). A `betterhook.local.toml` next to your main config is auto-merged with highest precedence, useful for per-machine overrides.
 
 ### Isolation modes
 
@@ -173,7 +173,7 @@ betterhook run pre-commit --json
 When a formatter hook fails, an agent can fix and retry:
 
 ```sh
-betterhook run pre-commit --json   # exit 1 -- fmt failed
+betterhook run pre-commit --json   # exit 1, fmt failed
 betterhook fix --hook pre-commit   # runs each job's fix variant
 git add -u
 betterhook run pre-commit --json   # retry
@@ -208,7 +208,7 @@ betterhook doctor                  # health check: install, config, cache, tools
 
 ## Exit codes
 
-Stable across releases -- agents can rely on these.
+Stable across releases. Agents can rely on these.
 
 | Code | Meaning |
 |---:|---|
@@ -236,7 +236,7 @@ Stable across releases -- agents can rely on these.
 ## How it works
 
 1. You run `git commit`.
-2. Git fires `.git/hooks/pre-commit` -- the wrapper betterhook installed.
+2. Git fires `.git/hooks/pre-commit`, the wrapper betterhook installed.
 3. The wrapper runs `git rev-parse --show-toplevel` to find the **current worktree**, not the shared `.git/` dir.
 4. It execs into `betterhook __dispatch --hook pre-commit --worktree /path/to/this/worktree`.
 5. betterhook loads `betterhook.toml` from that worktree, resolves extends and local overrides.
@@ -290,10 +290,10 @@ All commits use [conventional commits](https://www.conventionalcommits.org/). Se
 
 ## Documentation
 
-- [betterhook.dev](https://betterhook.dev) -- full docs (commands, architecture, reference)
-- [`CHANGELOG.md`](CHANGELOG.md) -- release history
-- `betterhook --help` -- per-subcommand reference
+- [betterhook.dev](https://betterhook.dev) — full docs (commands, architecture, reference)
+- [`CHANGELOG.md`](CHANGELOG.md) — release history
+- `betterhook --help` — per-subcommand reference
 
 ## License
 
-MIT -- see [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).
