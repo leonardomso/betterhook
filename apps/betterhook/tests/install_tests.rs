@@ -504,17 +504,14 @@ async fn installed_wrapper_handles_empty_git_dir_env() {
     .unwrap();
     std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
 
+    // Write wrapper content to a temp file, then copy to the final
+    // path. This avoids ETXTBSY on Linux where the kernel can hold
+    // a write reference on the file even after close+sync_all.
     let wrapper = repo.join("pre-commit");
-    {
-        let f = std::fs::File::create(&wrapper).unwrap();
-        std::io::Write::write_all(
-            &mut &f,
-            render_wrapper(&stub.display().to_string()).as_bytes(),
-        )
-        .unwrap();
-        f.sync_all().unwrap();
-        // Drop `f` before chmod+exec so the kernel sees a closed write fd.
-    }
+    let wrapper_tmp = repo.join("pre-commit.tmp");
+    std::fs::write(&wrapper_tmp, render_wrapper(&stub.display().to_string())).unwrap();
+    std::fs::copy(&wrapper_tmp, &wrapper).unwrap();
+    std::fs::remove_file(&wrapper_tmp).unwrap();
     std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let out = Command::new(&wrapper)
