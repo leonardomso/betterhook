@@ -6,15 +6,10 @@
 //! parallel jobs stays line-atomic. The same event stream can also be
 //! drained as NDJSON for agents.
 //!
-//! Performance notes:
-//! - The TTY writer locks stdout/stderr once and writes all fields
-//!   with `write!` directly, avoiding intermediate `String`
-//!   allocations from `format!` and `.to_string()`.
-//! - The JSON writer uses `serde_json::to_writer` to serialize
-//!   directly into a locked stdout, skipping the `to_string` heap
-//!   allocation.
-//! - The `job` field in `OutputEvent::Line` uses `Arc<str>` to avoid
-//!   cloning a heap `String` on every output line.
+//! Performance: the TTY writer locks stdout/stderr once per event and
+//! writes all fields with `write!` directly. The JSON writer uses
+//! `serde_json::to_writer` into locked stdout. Zero intermediate
+//! `String` allocations on the hot path.
 
 use std::io::Write;
 use std::time::Duration;
@@ -45,6 +40,11 @@ pub enum DiagnosticSeverity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OutputEvent {
+    HookStarted {
+        hook: String,
+        jobs: usize,
+        parallel: bool,
+    },
     JobStarted {
         job: String,
         cmd: String,
@@ -111,6 +111,19 @@ fn color_for(job: &str) -> AnsiColors {
     PALETTE[(hash as usize) % PALETTE.len()]
 }
 
+/// Format a duration for human display: "312ms", "1.2s", "2m 30s".
+fn fmt_duration(d: &Duration) -> String {
+    let ms = d.as_millis();
+    if ms < 1_000 {
+        format!("{ms}ms")
+    } else if ms < 60_000 {
+        format!("{:.1}s", d.as_secs_f64())
+    } else {
+        let secs = d.as_secs();
+        format!("{}m {}s", secs / 60, secs % 60)
+    }
+}
+
 /// Selects which output sink the multiplexer writes to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SinkKind {
@@ -152,7 +165,6 @@ async fn json_writer(mut rx: mpsc::Receiver<OutputEvent>) {
 }
 
 /// Write a single event as NDJSON directly to locked stdout.
-/// Uses `to_writer` to avoid the intermediate `String` from `to_string`.
 fn write_event_json(ev: &OutputEvent) {
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
@@ -163,23 +175,41 @@ fn write_event_json(ev: &OutputEvent) {
 
 /// Write a single event as colorized TTY output.
 ///
-/// All writes go through a locked stderr (or stdout for `Line::Stdout`)
-/// to avoid per-call lock overhead. The owo-colors `Display` impls
-/// write ANSI escapes directly into the formatter without allocating.
+/// Design:
+/// - Hook header gives context ("pre-commit | 3 jobs, parallel")
+/// - Job start shows name bold, command dimmed
+/// - Output lines are prefixed with dimmed job tag
+/// - Success: green checkmark, duration only
+/// - Failure: red X, duration + exit code (exit code is noise on success)
+/// - Summary: clear pass/fail with counts and timing
 #[allow(clippy::too_many_lines)]
 fn write_event_tty(ev: &OutputEvent) {
     match ev {
+        OutputEvent::HookStarted {
+            hook,
+            jobs,
+            parallel,
+        } => {
+            let stderr = std::io::stderr();
+            let mut w = stderr.lock();
+            let mode = if *parallel { "parallel" } else { "sequential" };
+            let _ = writeln!(w);
+            let _ = writeln!(
+                w,
+                "  {} {} {}",
+                hook.bold(),
+                "|".dimmed(),
+                format_args!("{jobs} {}, {mode}", if *jobs == 1 { "job" } else { "jobs" }).dimmed(),
+            );
+            let _ = writeln!(w);
+        }
         OutputEvent::JobStarted { job, cmd } => {
             let c = color_for(job);
             let stderr = std::io::stderr();
             let mut w = stderr.lock();
-            let _ = writeln!(
-                w,
-                "{} {} {}",
-                "▶".color(c),
-                job.color(c).bold(),
-                cmd.dimmed()
-            );
+            let _ = writeln!(w, "  {} {}", "▶".color(c), job.color(c).bold());
+            // Show the command on a separate indented line, dimmed.
+            let _ = writeln!(w, "    {}", cmd.dimmed());
         }
         OutputEvent::Line { job, stream, line } => {
             let c = color_for(job);
@@ -187,12 +217,20 @@ fn write_event_tty(ev: &OutputEvent) {
                 Stream::Stdout => {
                     let stdout = std::io::stdout();
                     let mut w = stdout.lock();
-                    let _ = writeln!(w, "[{}] {line}", job.color(c));
+                    let _ = writeln!(
+                        w,
+                        "    {} {line}",
+                        format_args!("{}", job.dimmed().color(c))
+                    );
                 }
                 Stream::Stderr => {
                     let stderr = std::io::stderr();
                     let mut w = stderr.lock();
-                    let _ = writeln!(w, "[{}] {line}", job.color(c));
+                    let _ = writeln!(
+                        w,
+                        "    {} {line}",
+                        format_args!("{}", job.dimmed().color(c))
+                    );
                 }
             }
         }
@@ -207,18 +245,19 @@ fn write_event_tty(ev: &OutputEvent) {
             if *exit == 0 {
                 let _ = writeln!(
                     w,
-                    "{} {} ({}ms, exit {exit})",
+                    "  {} {} {}",
                     "✓".green(),
                     job.color(c).bold(),
-                    duration.as_millis(),
+                    fmt_duration(duration).dimmed(),
                 );
             } else {
                 let _ = writeln!(
                     w,
-                    "{} {} ({}ms, exit {exit})",
+                    "  {} {} {} {}",
                     "✗".red(),
                     job.color(c).bold(),
-                    duration.as_millis(),
+                    fmt_duration(duration).dimmed(),
+                    format_args!("exit {exit}").red(),
                 );
             }
         }
@@ -228,10 +267,10 @@ fn write_event_tty(ev: &OutputEvent) {
             let mut w = stderr.lock();
             let _ = writeln!(
                 w,
-                "{} {} skipped ({})",
-                "∘".dimmed(),
-                job.color(c).bold(),
-                reason.dimmed()
+                "  {} {} {}",
+                "○".dimmed(),
+                job.color(c).dimmed(),
+                reason.dimmed(),
             );
         }
         OutputEvent::JobCacheHit { job, files } => {
@@ -240,9 +279,10 @@ fn write_event_tty(ev: &OutputEvent) {
             let mut w = stderr.lock();
             let _ = writeln!(
                 w,
-                "{} {} cache hit ({files} files)",
+                "  {} {} {}",
                 "⚡".color(c),
-                job.color(c).bold()
+                job.color(c).bold(),
+                format_args!("cached ({files} files)").dimmed(),
             );
         }
         OutputEvent::Diagnostic {
@@ -257,7 +297,7 @@ fn write_event_tty(ev: &OutputEvent) {
             let c = color_for(job);
             let stderr = std::io::stderr();
             let mut w = stderr.lock();
-            let _ = write!(w, "[{}] ", job.color(c).bold());
+            let _ = write!(w, "    ");
             match severity {
                 DiagnosticSeverity::Error => {
                     let _ = write!(w, "{}", "error".red().bold());
@@ -272,6 +312,7 @@ fn write_event_tty(ev: &OutputEvent) {
                     let _ = write!(w, "{}", "hint".cyan());
                 }
             }
+            let _ = write!(w, " {}", job.color(c));
             match (line, column) {
                 (Some(l), Some(col)) => {
                     let _ = write!(w, " {file}:{l}:{col}");
@@ -284,7 +325,7 @@ fn write_event_tty(ev: &OutputEvent) {
                 }
             }
             if let Some(r) = rule {
-                let _ = write!(w, " [{r}]");
+                let _ = write!(w, " {}", format_args!("[{r}]").dimmed());
             }
             let _ = writeln!(w, " {message}");
         }
@@ -296,21 +337,17 @@ fn write_event_tty(ev: &OutputEvent) {
         } => {
             let stderr = std::io::stderr();
             let mut w = stderr.lock();
+            let _ = writeln!(w);
             if *ok {
-                let _ = writeln!(
-                    w,
-                    "── {} — {jobs_run} run, {jobs_skipped} skipped, {}ms",
-                    "OK".green().bold(),
-                    total.as_millis(),
-                );
+                let _ = write!(w, "  {}", "PASS".green().bold());
             } else {
-                let _ = writeln!(
-                    w,
-                    "── {} — {jobs_run} run, {jobs_skipped} skipped, {}ms",
-                    "FAIL".red().bold(),
-                    total.as_millis(),
-                );
+                let _ = write!(w, "  {}", "FAIL".red().bold());
             }
+            let _ = write!(w, "  {jobs_run} run");
+            if *jobs_skipped > 0 {
+                let _ = write!(w, ", {jobs_skipped} skipped");
+            }
+            let _ = writeln!(w, "  {}", fmt_duration(total).dimmed());
         }
     }
 }
@@ -323,6 +360,13 @@ mod tests {
     fn color_is_deterministic() {
         assert_eq!(color_for("lint"), color_for("lint"));
         assert_eq!(color_for("test"), color_for("test"));
+    }
+
+    #[test]
+    fn fmt_duration_ranges() {
+        assert_eq!(fmt_duration(&Duration::from_millis(42)), "42ms");
+        assert_eq!(fmt_duration(&Duration::from_millis(1500)), "1.5s");
+        assert_eq!(fmt_duration(&Duration::from_secs(90)), "1m 30s");
     }
 
     #[tokio::test]

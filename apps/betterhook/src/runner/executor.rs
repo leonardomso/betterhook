@@ -101,6 +101,14 @@ pub async fn run_hook_with_options(
     let (tx, writer) = sink(options.sink);
     let start = Instant::now();
 
+    let _ = tx
+        .send(OutputEvent::HookStarted {
+            hook: hook.name.to_string(),
+            jobs: hook.jobs.len(),
+            parallel: hook.parallel,
+        })
+        .await;
+
     // Resolve the common dir once up-front — the lock client stores
     // advisory files under <common-dir>/betterhook/locks/.
     let common_dir = crate::git::git_common_dir(worktree).await?;
