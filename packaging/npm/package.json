@@ -1,6 +1,6 @@
 {
   "name": "betterhook",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Fast, worktree-native git hooks manager for parallel AI agents.",
   "license": "MIT",
   "author": "Leonardo Maldonado",

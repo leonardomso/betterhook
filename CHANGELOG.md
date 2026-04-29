@@ -6,6 +6,73 @@ project adheres to [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-29
+
+First public release to crates.io and npm. Adds shell completions,
+polished terminal output, automated release pipelines, and security
+hardening across CI.
+
+### Added
+
+- **Shell completions.** `betterhook completions <shell>` generates
+  completions for bash, zsh, fish, elvish, and powershell via
+  `clap_complete`. Pre-built completions ship in every GitHub Release
+  as `betterhook-completions.tar.gz`.
+- **Hook header in terminal output.** The TTY writer now prints a
+  header line (`pre-commit | 3 jobs, parallel`) when a hook starts,
+  giving immediate context about what is running and how.
+- **Human-readable durations.** Job and summary timings render as
+  `42ms`, `1.5s`, or `2m 30s` instead of raw milliseconds.
+- **npm package.** `npm install -g betterhook` downloads the correct
+  platform binary from GitHub Releases. Uses OIDC trusted publishing
+  (no stored npm token).
+- **crates.io publishing.** Both `betterhook` (library) and
+  `betterhook-cli` publish automatically via release-plz on every
+  version tag.
+- **Renovate.** Replaces Dependabot for Cargo and GitHub Actions
+  dependency updates with weekly grouped PRs, auto-merge on
+  minor/patch, and lockfile maintenance.
+- **cargo-deny in CI.** Checks RustSec advisories, license
+  compliance, wildcard bans, and unknown source registries on every
+  PR.
+- **CODEOWNERS.** `@leonardomso` owns the entire repository.
+
+### Changed
+
+- **Terminal output redesigned.** Job start lines show the name bold
+  with the command dimmed on a separate indented line. Output lines
+  are indented under their job. Success markers hide `exit 0` (only
+  failures show the exit code). Summary line is `PASS  3 run  212ms`
+  instead of the previous `-- OK -- 3 run, 0 skipped, 212ms`.
+- **Output multiplexer performance.** All TTY writes go through a
+  locked stdio handle with `write!` directly, eliminating
+  intermediate `String` allocations. JSON mode uses
+  `serde_json::to_writer` into locked stdout instead of `to_string`
+  + `println!`.
+- **README rewritten.** Leads with the problem (worktree hooks
+  breaking under parallel agents), explains features in terms of
+  problems they solve, adds an install section with three methods
+  (crates.io, npm, source), and includes shell completion docs.
+- **CI hardened.** All GitHub Actions pinned to full SHA digests.
+  Workflow permissions scoped to least-privilege per job.
+- **Release binaries are tar.gz archives** with SHA256 checksums
+  instead of raw executables.
+
+### Fixed
+
+- **Sequential `fail_fast` job count.** The sequential executor
+  skipped incrementing `jobs_run` when `fail_fast` triggered,
+  reporting `0 run` even though a job clearly ran and failed. Now
+  matches the parallel executor's behavior.
+- **`Text file busy` race in install test.** The wrapper script was
+  written with `std::fs::write` and immediately exec'd. On Linux
+  under load the kernel could return `ETXTBSY`. Fixed with explicit
+  `File::create` + `sync_all` + drop before exec.
+- **macOS watcher test flake.** The `exclude_filter_blocks_events`
+  test failed on macOS because FSEvents delivered the
+  directory-creation event before the watcher started filtering.
+  Added settle delays.
+
 ## [0.0.2] - 2026-04-12
 
 Code-quality release. No new features and no schema changes — every
