@@ -2,11 +2,12 @@
 # https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
+# All advisories are denied by default in modern cargo-deny.
+# Use `ignore` to suppress specific advisories if needed.
 
 [licenses]
-unlicensed = "deny"
+# Unlicensed crates are always errors in modern cargo-deny.
+# Use `clarify` to help resolve ambiguous licenses.
 allow = [
     "MIT",
     "Apache-2.0",

@@ -505,7 +505,16 @@ async fn installed_wrapper_handles_empty_git_dir_env() {
     std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let wrapper = repo.join("pre-commit");
-    std::fs::write(&wrapper, render_wrapper(&stub.display().to_string())).unwrap();
+    {
+        let f = std::fs::File::create(&wrapper).unwrap();
+        std::io::Write::write_all(
+            &mut &f,
+            render_wrapper(&stub.display().to_string()).as_bytes(),
+        )
+        .unwrap();
+        f.sync_all().unwrap();
+        // Drop `f` before chmod+exec so the kernel sees a closed write fd.
+    }
     std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let out = Command::new(&wrapper)
