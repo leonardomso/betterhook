@@ -1,0 +1,38 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+# Ignore the bincode unmaintained advisory (RUSTSEC-2025-0141).
+# bincode 2.0.1 is feature-complete for our wire protocol use case.
+# Evaluate postcard or bitcode when the daemon protocol changes.
+ignore = ["RUSTSEC-2025-0141"]
+
+[licenses]
+# Unlicensed crates are always errors in modern cargo-deny.
+# Use `clarify` to help resolve ambiguous licenses.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+]
+confidence-threshold = 0.8
+
+[bans]
+# Transitive deps (notify, miette) pull in duplicate bitflags and
+# unicode-width versions. Allow until upstream consolidates.
+multiple-versions = "allow"
+# xtask (publish = false) uses a path-only dep on betterhook.
+# allow-wildcard-paths lets private crates use versionless path deps.
+allow-wildcard-paths = true
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

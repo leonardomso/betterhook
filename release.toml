@@ -6,8 +6,8 @@
 #   cargo release --workspace                            # bump, tag, push
 
 [workspace]
-# Don't publish to crates.io yet — we're pre-release (0.0.x).
-publish = false
+# Publish the library and CLI crates to crates.io.
+publish = true
 # Tag format: v0.0.2, v0.0.3, etc.
 tag-prefix = "v"
 tag-name = "v{{version}}"
@@ -28,3 +28,7 @@ search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
 exactly = 1
 prerelease = true
+
+# xtask is never published.
+[packages.xtask]
+publish = false

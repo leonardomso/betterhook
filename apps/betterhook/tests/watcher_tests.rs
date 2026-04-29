@@ -118,8 +118,15 @@ async fn exclude_filter_blocks_events() {
     let excluded_dir = dir.path().join("target");
     std::fs::create_dir_all(&excluded_dir).unwrap();
 
+    // Let the filesystem settle after mkdir so the watcher does not
+    // pick up the directory-creation event on macOS FSEvents.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
     let mut handle = WatcherHandle::watch(dir.path(), &["**/target/**".to_owned()]);
     let rx = handle.events.as_mut().unwrap();
+
+    // Give the watcher time to register before writing.
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     std::fs::write(excluded_dir.join("output.o"), "binary").unwrap();
 

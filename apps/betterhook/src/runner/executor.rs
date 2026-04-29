@@ -101,6 +101,14 @@ pub async fn run_hook_with_options(
     let (tx, writer) = sink(options.sink);
     let start = Instant::now();
 
+    let _ = tx
+        .send(OutputEvent::HookStarted {
+            hook: hook.name.to_string(),
+            jobs: hook.jobs.len(),
+            parallel: hook.parallel,
+        })
+        .await;
+
     // Resolve the common dir once up-front — the lock client stores
     // advisory files under <common-dir>/betterhook/locks/.
     let common_dir = crate::git::git_common_dir(worktree).await?;
@@ -229,7 +237,7 @@ async fn run_sequential(
     let mut jobs_skipped = 0usize;
     let mut failed = false;
 
-    'outer: for rj in jobs {
+    for rj in jobs {
         let Some(plan) = rj.plan else {
             let _ = ctx
                 .tx
@@ -248,6 +256,7 @@ async fn run_sequential(
             acquire_if_isolated(&rj.job, ctx.common_dir, ctx.worktree, ctx.no_locks, ctx.tx).await;
         let mut extra_env = vec![("BETTERHOOK_HOOK".to_owned(), ctx.hook.name.to_string())];
         extra_env.extend(lock_env);
+        let mut job_failed = false;
         for cmd in &plan.commands {
             let exit = run_command(
                 rj.job.name.as_str(),
@@ -262,8 +271,9 @@ async fn run_sequential(
             .await?;
             if exit != 0 {
                 failed = true;
+                job_failed = true;
                 if ctx.hook.fail_fast {
-                    break 'outer;
+                    break;
                 }
             }
         }
@@ -273,6 +283,10 @@ async fn run_sequential(
         }
 
         jobs_run += 1;
+
+        if job_failed && ctx.hook.fail_fast {
+            break;
+        }
     }
 
     Ok(RunSummary {
@@ -744,8 +758,8 @@ mod tests {
         let rep = run_hook(&hook, &root).await.unwrap();
         assert!(!rep.ok);
         assert_eq!(
-            rep.jobs_run, 0,
-            "fail_fast bails before counting second job"
+            rep.jobs_run, 1,
+            "fail_fast counts the failed job before bailing"
         );
     }
 

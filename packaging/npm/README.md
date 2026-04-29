@@ -1,18 +1,20 @@
-# betterhook (npm)
+# betterhook
 
-This is a **distribution wrapper**, not the source code. It downloads
-the platform-specific native binary from GitHub Releases on
-`npm install` and provides a `betterhook` command in your PATH.
+A git hooks manager that actually works with worktrees.
 
-For documentation, source code, and issue tracking, visit
-[github.com/leonardomso/betterhook](https://github.com/leonardomso/betterhook).
+This is a **distribution package** that downloads the platform-specific
+native binary from GitHub Releases on `npm install`. The binary is a
+single static Rust executable with ~30 ms cold start.
+
+For documentation, source code, and issues:
+[github.com/leonardomso/betterhook](https://github.com/leonardomso/betterhook)
 
 ## Install
 
 ```sh
 npm install -g betterhook
 # or
-bun add -g betterhook
+npx betterhook init
 ```
 
 ## Supported platforms

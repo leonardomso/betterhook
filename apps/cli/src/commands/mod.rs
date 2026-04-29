@@ -1,5 +1,6 @@
 pub mod builtins;
 pub mod cache;
+pub mod completions;
 pub mod dispatch;
 pub mod doctor;
 pub mod explain;

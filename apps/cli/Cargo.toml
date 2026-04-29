@@ -6,19 +6,21 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "CLI for betterhook -- a fast, worktree-native git hooks manager for parallel AI agents."
+description = "Fast, worktree-native git hooks manager for parallel AI agents."
 homepage = "https://github.com/leonardomso/betterhook"
 documentation = "https://github.com/leonardomso/betterhook"
 keywords = ["git", "hooks", "worktree", "cli", "linter"]
 categories = ["command-line-utilities", "development-tools"]
+readme = "../../README.md"
 
 [[bin]]
 name = "betterhook"
 path = "src/main.rs"
 
 [dependencies]
-betterhook = { path = "../betterhook" }
+betterhook = { path = "../betterhook", version = "0.0.2" }
 clap = { workspace = true }
+clap_complete = { workspace = true }
 tokio = { workspace = true }
 miette = { workspace = true }
 serde = { workspace = true }

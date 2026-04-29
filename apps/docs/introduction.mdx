@@ -4,7 +4,7 @@ description: "A fast, memory-tight, worktree-native git hooks manager built for 
 icon: "book-open"
 ---
 
-**betterhook** replaces [lefthook](https://lefthook.dev) for teams and tooling where multiple coding agents (Claude Code, Cursor, Codex, Aider, …) run in parallel via [Conductor](https://conductor.build) or similar harnesses, each in its own git worktree.
+**betterhook** is a git hooks manager built for teams running multiple coding agents (Claude Code, Cursor, Codex, Aider, ...) in parallel, each in its own git worktree.
 
 It's a single static Rust binary:
 
@@ -31,7 +31,7 @@ git commit -am "go"       # your hooks run, correctly, per-worktree
     The full `betterhook.toml` reference with realistic examples.
   </Card>
   <Card title="Agent integration" icon="bot" href="/agents/overview">
-    NDJSON output, self-correction loops, Conductor integration.
+    NDJSON output, self-correction loops, and agent harness integration.
   </Card>
 </CardGroup>
 
