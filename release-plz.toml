@@ -1,0 +1,49 @@
+# release-plz configuration
+# https://release-plz.dev/docs/config
+
+[workspace]
+# Use conventional commits to determine version bumps.
+changelog_update = true
+# PR title format.
+pr_name = "chore: release v{{ version }}"
+# Commit message on the release PR.
+release_commit_message = "chore: release v{{ version }}"
+# Create git tags on release.
+git_tag_enable = true
+# Publish to crates.io on merge.
+publish = true
+# Don't create GitHub releases from release-plz (our release.yml handles
+# binary builds and GitHub releases on tag push).
+git_release_enable = false
+
+# The library crate is what users depend on.
+[[package]]
+name = "betterhook"
+changelog_path = "CHANGELOG.md"
+# Include all conventional commit types in the changelog.
+changelog_include = [
+    "feat",
+    "fix",
+    "perf",
+    "refactor",
+    "docs",
+    "test",
+]
+
+# The CLI binary crate. Versioned in lockstep with the library.
+[[package]]
+name = "betterhook-cli"
+# CLI changelog lives next to its Cargo.toml.
+changelog_path = "apps/cli/CHANGELOG.md"
+changelog_include = [
+    "feat",
+    "fix",
+    "perf",
+]
+
+# xtask is internal tooling, never published.
+[[package]]
+name = "xtask"
+publish = false
+changelog_update = false
+git_tag_enable = false

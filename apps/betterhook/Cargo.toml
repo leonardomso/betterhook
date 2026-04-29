@@ -11,6 +11,9 @@ homepage = "https://github.com/leonardomso/betterhook"
 documentation = "https://github.com/leonardomso/betterhook"
 keywords = ["git", "hooks", "worktree", "cli", "linter"]
 categories = ["command-line-utilities", "development-tools"]
+readme = "../../README.md"
+
+exclude = ["tests/", "benches/", "fuzz/"]
 
 [lib]
 name = "betterhook"

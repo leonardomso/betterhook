@@ -107,3 +107,24 @@ jobs:
             artifacts/checksums-sha256.txt
           draft: false
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish betterhook (library) to crates.io
+        run: cargo publish -p betterhook --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish betterhook-cli to crates.io
+        run: |
+          # Wait for crates.io index to pick up the library crate.
+          sleep 30
+          cargo publish -p betterhook-cli --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
