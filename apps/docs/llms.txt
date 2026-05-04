@@ -35,6 +35,7 @@ This file lists every page in the betterhook documentation. Each entry links to 
 - [betterhook doctor](https://betterhook.dev/commands/doctor): Pre-flight health check for install, config, tools, cache, and watcher.
 - [betterhook import](https://betterhook.dev/commands/import): Convert lefthook, husky, hk, or pre-commit configs into `betterhook.toml`.
 - [betterhook migrate (deprecated)](https://betterhook.dev/commands/migrate): Hidden alias for `betterhook import --from-format lefthook`.
+- [betterhook completions](https://betterhook.dev/commands/completions): Generate shell completion scripts for bash, zsh, fish, elvish, or powershell.
 
 ## Architecture
 

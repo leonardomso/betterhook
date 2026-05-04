@@ -1,0 +1,61 @@
+---
+title: "betterhook completions"
+description: "Generate shell completion scripts for bash, zsh, fish, elvish, or powershell."
+icon: "terminal"
+---
+
+```sh
+betterhook completions <shell>
+```
+
+Prints a completion script for the given shell to stdout. Pipe it into the
+location your shell loads completions from.
+
+## Arguments
+
+<ParamField path="shell" type="enum" required>
+  One of `bash`, `zsh`, `fish`, `elvish`, `powershell`.
+</ParamField>
+
+## Install
+
+<Tabs>
+  <Tab title="zsh">
+    ```sh
+    mkdir -p ~/.zfunc
+    betterhook completions zsh > ~/.zfunc/_betterhook
+    # ensure ~/.zfunc is on $fpath, then:
+    autoload -Uz compinit && compinit
+    ```
+  </Tab>
+  <Tab title="bash">
+    ```sh
+    betterhook completions bash > /etc/bash_completion.d/betterhook
+    # or, user-local:
+    betterhook completions bash >> ~/.bashrc
+    ```
+  </Tab>
+  <Tab title="fish">
+    ```sh
+    betterhook completions fish > ~/.config/fish/completions/betterhook.fish
+    ```
+  </Tab>
+  <Tab title="elvish">
+    ```sh
+    betterhook completions elvish > ~/.elvish/lib/betterhook.elv
+    ```
+  </Tab>
+  <Tab title="powershell">
+    ```powershell
+    betterhook completions powershell | Out-String | Invoke-Expression
+    # add to $PROFILE to load on shell start
+    ```
+  </Tab>
+</Tabs>
+
+## Notes
+
+- Completions reflect the subcommands and flags compiled into the binary at
+  the time you ran the command. Regenerate after upgrading betterhook.
+- Hidden subcommands (`__dispatch`, `serve`, `migrate`) are not exposed
+  through completion.

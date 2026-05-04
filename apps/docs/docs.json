@@ -77,7 +77,8 @@
               "commands/builtins",
               "commands/doctor",
               "commands/import",
-              "commands/migrate"
+              "commands/migrate",
+              "commands/completions"
             ]
           },
           {
