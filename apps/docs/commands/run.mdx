@@ -23,7 +23,7 @@ for local testing and CI workflows that want to invoke betterhook directly.
   Print a JSON plan of what would run without executing anything.
 </ParamField>
 <ParamField path="--json" type="flag">
-  Emit NDJSON events instead of TTY output. See [Agents → NDJSON](/agents/ndjson).
+  Emit NDJSON events instead of TTY output. See [NDJSON output](/reference/ndjson).
 </ParamField>
 <ParamField path="--skip" type="comma-separated list">
   Job names to skip for this run. Overrides `BETTERHOOK_SKIP`.
@@ -83,8 +83,8 @@ for local testing and CI workflows that want to invoke betterhook directly.
 
 ## Exit codes
 
-`run` uses the [stable betterhook contract](/reference/exit-codes) — `0` on
-success, `1` when any job fails, `124` on per-job timeout, etc.
+`run` uses the [stable betterhook contract](/reference/exit-codes): `0` on
+success, `1` when any job fails, `124` on per-job timeout, and so on.
 
 <Tip>
   If you want to test your config without touching git state,

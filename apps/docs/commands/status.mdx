@@ -11,13 +11,13 @@ betterhook status [--worktree <path>]
 Emits a pretty-printed JSON document describing:
 
 - The current worktree's git identity (`path`, `git_dir`, `common_dir`)
-- Installed hooks — which exist, their expected SHA, whether the file on disk matches
-- The resolved config — which hook types are declared, which jobs each has
+- Installed hooks: which exist, their expected SHA, whether the file on disk matches
+- The resolved config: which hook types are declared, which jobs each has
 - The betterhook version that produced the install
 - Any non-fatal inspection failures in `diagnostics` (for example a corrupt
   install manifest or unreadable speculative stats sidecar)
 
-Designed as the first call an agent makes after landing in a repo.
+Intended as the first call an agent makes after landing in a repo.
 
 ## Flags
 
@@ -29,7 +29,7 @@ Designed as the first call an agent makes after landing in a repo.
 
 ```json
 {
-  "betterhook_version": "0.0.2",
+  "betterhook_version": "0.1.0",
   "worktree": {
     "path": "/Users/you/repo",
     "git_dir": "/Users/you/repo/.git",
@@ -39,7 +39,7 @@ Designed as the first call an agent makes after landing in a repo.
     "manifest_path": "/Users/you/repo/.git/betterhook/installed.json",
     "wrapper_version": 1,
     "betterhook_bin": "/Users/you/.cargo/bin/betterhook",
-    "installed_for_versions": "0.0.2",
+    "installed_for_versions": "0.1.0",
     "hooks": [
       {
         "name": "pre-commit",
@@ -98,10 +98,10 @@ whole command.
 ## See also
 
 <CardGroup cols={2}>
-  <Card title="Agent integration" icon="bot" href="/agents/overview">
-    How to wire `betterhook status` into an agent loop.
-  </Card>
-  <Card title="NDJSON output" icon="code" href="/agents/ndjson">
+  <Card title="NDJSON output" icon="braces" href="/reference/ndjson">
     The streaming event schema for `run --json`.
+  </Card>
+  <Card title="Exit codes" icon="list-checks" href="/reference/exit-codes">
+    The process exit-code contract `status` and `run` both honor.
   </Card>
 </CardGroup>

@@ -11,10 +11,10 @@ least one job.
 
 ## Design principles
 
-<Check>**Opt-in**: zero RSS cost when no job declares `isolate`.</Check>
-<Check>**Spawn-and-die**: first `isolate` acquire starts the daemon; it exits 60s after the last client disconnects.</Check>
-<Check>**Per-repo scope**: socket lives at `<git-common-dir>/betterhook/sock`, so every repo has its own daemon lifecycle.</Check>
-<Check>**Fallback-safe**: if the daemon can't start (sandboxing, permissions), the runner degrades to `fs4` flock on `<common-dir>/betterhook/locks/<key>.lock`.</Check>
+<Check>Opt-in. Zero RSS cost when no job declares `isolate`.</Check>
+<Check>Spawn-and-die. The first `isolate` acquire starts the daemon; it exits 60s after the last client disconnects.</Check>
+<Check>Per-repo scope. The socket lives at `<git-common-dir>/betterhook/sock`, so every repo has its own daemon lifecycle.</Check>
+<Check>Fallback-safe. If the daemon can't start (sandboxing, permissions), the runner degrades to `fs4` flock on `<common-dir>/betterhook/locks/<key>.lock`.</Check>
 
 ## Protocol
 
@@ -89,8 +89,8 @@ order. The three shapes of `LockKey.name`:
 ## Client-side fallback
 
 If every daemon spawn attempt fails, the lock client falls back to
-`fs4::FileExt::lock_exclusive` on `<common-dir>/betterhook/locks/<key>.lock`.
-This degrades:
+`fs4::FileExt::lock` (advisory exclusive flock) on
+`<common-dir>/betterhook/locks/<key>.lock`. This degrades:
 
 - Sharded semaphores → plain mutex (1 permit)
 - `LockKey.permits > 1` → ignored
@@ -101,8 +101,8 @@ Mutex semantics for simple `Tool` locks remain correct.
 ## Path length limit (macOS)
 
 macOS's Unix socket path limit is 104 characters. For deeply nested
-Conductor workspaces like `~/conductor/workspaces/.../wt-a/.git/...`, the
-default socket path can exceed that. betterhook's fallback is to use
+worktree paths like `~/work/agents/myrepo/wt-a/.git/...`, the default
+socket path can exceed that. betterhook's fallback is to use
 `/tmp/bh-<sha8>.sock` and write the chosen path into
 `<common-dir>/betterhook/sockpath` as a sentinel file the client reads.
 

@@ -1,0 +1,36 @@
+# Python project recipe.
+#
+# Ruff handles both lint and format (replacing flake8 + black + isort).
+# mypy runs separately because it's the slow one and benefits from a
+# sharded semaphore when several worktrees commit simultaneously.
+
+[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+fail_fast = false
+priority = ["fmt", "lint", "typecheck"]
+
+[hooks.pre-commit.jobs.fmt]
+run = "ruff format --check {staged_files}"
+fix = "ruff format {files}"
+glob = ["*.py"]
+exclude = ["**/migrations/**", "**/_generated/**"]
+stage_fixed = true
+isolate = "ruff"
+timeout = "60s"
+
+[hooks.pre-commit.jobs.lint]
+builtin = "ruff"
+
+[hooks.pre-commit.jobs.typecheck]
+run = "mypy --no-color-output {staged_files}"
+glob = ["*.py"]
+exclude = ["**/tests/**"]
+isolate = { name = "mypy", slots = 2 }
+timeout = "5m"
+
+[hooks.pre-push.jobs.test]
+run = "pytest -q"
+timeout = "10m"

@@ -35,7 +35,7 @@ which = "8.0.2"
 notify = "8.2.0"
 semver = { version = "1.0.28", features = ["serde"] }
 bincode = { version = "2.0.1", features = ["serde"] }
-fs4 = "0.13.1"
+fs4 = "1.1.0"
 tempfile = "3.27"
 insta = { version = "1.47.2", features = ["yaml", "toml", "json", "filters"] }
 criterion = { version = "0.8.2", features = ["async_tokio"] }

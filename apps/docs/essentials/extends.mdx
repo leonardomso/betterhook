@@ -4,10 +4,10 @@ description: "Share a base config across repos, layer per-machine overrides."
 icon: "git-merge"
 ---
 
-betterhook supports **two** inheritance mechanisms:
+betterhook supports two inheritance mechanisms:
 
-1. **`extends`** — pull in another config file (relative or absolute path). Layered under the current file.
-2. **`betterhook.local.*`** — a gitignored sibling file merged on top of everything else.
+1. `extends`: pull in another config file (relative or absolute path). Layered under the current file.
+2. `betterhook.local.*`: a gitignored sibling file merged on top of everything else.
 
 ## extends
 
@@ -32,12 +32,12 @@ run = "cargo fmt --all -- --check"
 run = "cargo clippy --workspace -- -D warnings"
 ```
 
-**Resolution is depth-first.** Each extended file is resolved recursively
-(its own `extends` is processed first), then merged in the order they appear,
-then the current file's content is layered on top.
+Resolution is depth-first. Each extended file is resolved recursively
+(its own `extends` is processed first), then merged in the order they
+appear, then the current file's content is layered on top.
 
 <Note>
-  **Cross-format extends works.** A `betterhook.toml` can extend a
+  Cross-format extends works. A `betterhook.toml` can extend a
   `base.yml`, which can extend a `core.json`. All three formats deserialize
   into the same internal AST.
 </Note>
@@ -49,7 +49,7 @@ then the current file's content is layered on top.
 | Scalars (bool, int, string)     | Later value wins if present; earlier kept otherwise        |
 | `hooks` map                     | Unions by hook name; overlapping hooks merge recursively   |
 | `jobs` map inside a hook        | Unions by job name; overlapping jobs merge recursively     |
-| `env` map inside a job          | **Key-by-key merge** — new keys add, existing keys override |
+| `env` map inside a job          | Key-by-key: new keys add, existing keys override            |
 | Lists (`glob`, `exclude`, etc.) | Later list replaces earlier                                |
 
 ### Circular extends
@@ -69,8 +69,8 @@ config.
 
 - Gitignored by default (the root `.gitignore` from `betterhook init`
   includes it).
-- Auto-discovered — you don't need to reference it from the main file.
-- Merged **last**, highest precedence.
+- Auto-discovered. You don't need to reference it from the main file.
+- Merged last, highest precedence.
 
 Typical uses:
 
@@ -88,7 +88,7 @@ Typical uses:
     ```
   </Card>
   <Card title="Point isolate at a dev daemon" icon="plug">
-    Use `BETTERHOOK_DAEMON_SOCK` in your shell profile instead — it's less noisy.
+    Use `BETTERHOOK_DAEMON_SOCK` in your shell profile instead. It's less noisy.
   </Card>
   <Card title="Add an experimental job" icon="flask">
     ```toml

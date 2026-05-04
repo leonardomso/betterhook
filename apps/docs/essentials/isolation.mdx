@@ -4,11 +4,11 @@ description: "Tool mutexes, sharded semaphores, and automatic CARGO_TARGET_DIR i
 icon: "lock"
 ---
 
-When multiple worktrees run the same tool in parallel, things break:
-ESLint cache writes race, prettier corrupts `pnpm-lock.yaml`, cargo builds
-collide on the shared `target/` directory. **Isolation** is betterhook's
-answer — a per-job declaration that tells the coordinator (daemon or
-flock fallback) how to serialize.
+When several worktrees run the same tool in parallel, ESLint cache
+writes race, prettier corrupts `pnpm-lock.yaml`, and cargo builds
+collide on the shared `target/`. `isolate` is the per-job declaration
+that tells the coordinator (daemon, with a flock fallback) how to
+serialize them.
 
 ## The three shapes
 
@@ -106,7 +106,6 @@ Use sparingly.
 
 ## Future: lockfile-guarded locks
 
-Planned for v0.3: `isolate = { tool = "prettier", lockfile_guarded = ["pnpm-lock.yaml"] }` —
-the daemon refuses to grant the lock if the named lockfile has been touched
-in the last 100 ms. This fixes the prettier-on-`pnpm-lock.yaml` corruption
-class directly.
+Planned for v0.3: `isolate = { tool = "prettier", lockfile_guarded = ["pnpm-lock.yaml"] }`.
+The daemon refuses to grant the lock if the named lockfile changed in the
+last 100 ms — closing the prettier-on-`pnpm-lock.yaml` corruption window.

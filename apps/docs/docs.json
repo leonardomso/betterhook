@@ -77,16 +77,8 @@
               "commands/builtins",
               "commands/doctor",
               "commands/import",
-              "commands/migrate"
-            ]
-          },
-          {
-            "group": "Agent integration",
-            "pages": [
-              "agents/overview",
-              "agents/ndjson",
-              "agents/self-correction",
-              "agents/conductor"
+              "commands/migrate",
+              "commands/completions"
             ]
           },
           {
@@ -119,6 +111,7 @@
             "pages": [
               "reference/exit-codes",
               "reference/env-vars",
+              "reference/ndjson",
               "reference/protocol",
               "reference/performance"
             ]

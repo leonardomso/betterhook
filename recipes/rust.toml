@@ -1,0 +1,34 @@
+# Rust workspace recipe.
+#
+# rustfmt + clippy + cargo test on every commit. cargo's `target/` is
+# the classic worktree-collision hazard — `target_dir = "per-worktree"`
+# tells betterhook to inject a unique CARGO_TARGET_DIR per worktree so
+# parallel builds across agents never corrupt each other's artifacts.
+
+[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+fail_fast = false
+priority = ["fmt", "clippy", "test"]
+
+[hooks.pre-commit.jobs.fmt]
+builtin = "rustfmt"
+stage_fixed = true
+
+[hooks.pre-commit.jobs.clippy]
+run = "cargo clippy --workspace --all-targets -- -D warnings"
+glob = ["*.rs", "Cargo.toml", "Cargo.lock"]
+isolate = { tool = "cargo", target_dir = "per-worktree" }
+timeout = "5m"
+
+[hooks.pre-commit.jobs.test]
+run = "cargo test --workspace --quiet"
+glob = ["*.rs", "Cargo.toml", "Cargo.lock"]
+isolate = { tool = "cargo", target_dir = "per-worktree" }
+timeout = "10m"
+
+[hooks.pre-push.jobs.audit]
+run = "cargo audit --deny warnings"
+timeout = "2m"

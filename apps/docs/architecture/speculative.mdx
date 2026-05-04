@@ -7,8 +7,8 @@ icon: "zap"
 The coordinator daemon watches every active worktree with `notify`,
 debounces save events per file, resolves which `concurrent_safe` jobs
 match the touched paths, and runs them through the same DAG executor
-the commit-time runner uses. Results land in the CA cache. When you
-finally `git commit`, the runner just hits the cache.
+the commit-time runner uses. Results land in the CA cache. By the
+time you `git commit`, the runner reads from the cache.
 
 ## Configuration
 
@@ -22,8 +22,8 @@ watch_exclude = ["**/target/**", "**/node_modules/**", "**/.git/**"]
 ## Graceful degradation
 
 `notify` is flaky on NFS, sandboxed containers, and fresh Linux
-boxes that haven't bumped their inotify watch limit. Betterhook never
-crashes the daemon when a watcher fails to start — it sets a
+boxes that haven't bumped their inotify watch limit. betterhook never
+crashes the daemon when a watcher fails to start. It sets a
 `disabled_reason` on the speculative stats sidecar and falls back to
 non-speculative mode for that worktree. `betterhook status` and
 `betterhook doctor` both surface the reason.

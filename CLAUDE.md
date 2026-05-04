@@ -56,6 +56,7 @@ apps/betterhook/   Library crate -- config parser, runner, cache, daemon, builti
 apps/cli/          CLI binary -- thin clap wrapper over the library
 apps/docs/         Mintlify documentation site
 xtask/             Dev tooling: benchmarks, stress harness, fuzz runner
+recipes/           Drop-in betterhook.toml configs for common stacks
 packaging/         Homebrew formula + npm wrapper scaffolds
 ```
 

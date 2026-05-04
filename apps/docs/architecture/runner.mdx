@@ -4,7 +4,7 @@ description: "The Tokio executor, output multiplexer, and cancellation model."
 icon: "play"
 ---
 
-The runner (`apps/betterhook/src/runner/`) is where hooks actually execute.
+The runner (`apps/betterhook/src/runner/`) is where hooks execute.
 It's built around four pieces:
 
 ## 1. `JobPlan` resolution
@@ -73,21 +73,21 @@ instead of running anything.
 in-flight child immediately. betterhook uses a custom `Cancel` primitive
 (`AtomicBool` + `tokio::sync::Notify`) that:
 
-- **Latches** — once `cancel()` fires, subsequent `.cancelled()` calls return
-  immediately even if they weren't waiting when the fire happened
-- **Propagates through `run_command`** — each subprocess select!'s on the
-  cancel future, its own `wait()`, and optionally a per-job timeout
+- **Latches.** Once `cancel()` fires, subsequent `.cancelled()` calls return
+  immediately even if they weren't waiting when the fire happened.
+- **Propagates through `run_command`.** Each subprocess select!'s on the
+  cancel future, its own `wait()`, and optionally a per-job timeout.
 
 When cancel fires, `run_command`:
 
 1. Exits the select with `Outcome::Cancelled`
 2. Calls `child.start_kill()` (SIGKILL)
 3. Awaits the final `wait()` to reap the zombie
-4. **Aborts the stdout/stderr reader tasks** — this is non-obvious but critical:
-   if a child like `sh -c "sleep 5"` is killed, its `sh` dies but the `sleep`
-   becomes an orphan still holding the pipe fds. Without explicit abort of
-   the reader tasks, the outer code would wait for the pipe to close and
-   hang for the full 5 seconds.
+4. **Aborts the stdout/stderr reader tasks.** This is non-obvious but
+   critical: if a child like `sh -c "sleep 5"` is killed, its `sh` dies but
+   the `sleep` becomes an orphan still holding the pipe fds. Without
+   explicit abort of the reader tasks, the outer code would wait for the
+   pipe to close and hang for the full 5 seconds.
 
 ## 4. Output multiplexer
 
@@ -101,16 +101,16 @@ Two sinks currently exist:
 <Tabs>
   <Tab title="TTY mode">
     Colored per-job prefixes via `owo-colors`. Deterministic colors from a
-    FNV-1a hash of the job name — the same job always gets the same
+    FNV-1a hash of the job name, so the same job always gets the same
     palette slot across runs.
   </Tab>
   <Tab title="NDJSON mode">
     Each `OutputEvent` is serialized to one JSON line via `serde_json`.
-    See [agents/ndjson](/agents/ndjson) for the schema.
+    See [reference/ndjson](/reference/ndjson) for the schema.
   </Tab>
 </Tabs>
 
-Both sinks share the same backing mpsc — the sink is selected once at
+Both sinks share the same backing mpsc. The sink is selected once at
 runner start and stays fixed for the hook run.
 
 ## 5. Git index lock

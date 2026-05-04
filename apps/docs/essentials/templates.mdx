@@ -17,10 +17,8 @@ with the shell-escaped file list at execution time.
 | `{files}`         | The glob-filtered subset of whichever file set is active           |
 
 <Note>
-  Every file set is parsed from **NUL-delimited** git output via
-  `OsStr::from_bytes`, so paths with spaces, unicode, or leading dashes
-  round-trip correctly. This is the direct fix for a whole category of
-  lefthook quoting bugs.
+  File sets are parsed from NUL-delimited git output via `OsStr::from_bytes`,
+  so paths with spaces, unicode, or leading dashes round-trip correctly.
 </Note>
 
 ## The filter pipeline
@@ -50,12 +48,12 @@ sh -c "eslint a.ts b.ts ..."
 
 ### Empty file lists
 
-If a job has a template but its filtered list is empty, **the job is skipped**
+If a job has a template but its filtered list is empty, the job is skipped
 with `reason = "no files matched glob"`. This prevents running `eslint` with
 no arguments and having it lint the world.
 
 <Warning>
-  If you don't want this behavior, drop the template variable entirely —
+  If you don't want this behavior, drop the template variable entirely.
   `run = "eslint --cache"` will always execute.
 </Warning>
 
@@ -67,7 +65,7 @@ invocations, aggregating exit codes. You almost never need to worry about this.
 
 ## Glob syntax
 
-betterhook uses [`globset`](https://docs.rs/globset) — the same engine as
+betterhook uses [`globset`](https://docs.rs/globset), the same engine as
 ripgrep. Highlights:
 
 <AccordionGroup>

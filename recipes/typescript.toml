@@ -1,0 +1,43 @@
+# TypeScript / JavaScript monorepo recipe.
+#
+# Runs Prettier, ESLint, and tsc on staged files. tsc gets a sharded
+# semaphore so up to 4 packages can type-check concurrently without
+# blowing up `tsserver` memory. Prettier and ESLint share their normal
+# global mutex names so other worktrees can coordinate.
+
+[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+fail_fast = false
+priority = ["fmt", "lint", "typecheck"]
+
+[hooks.pre-commit.jobs.fmt]
+run = "prettier --check {staged_files}"
+fix = "prettier --write {files}"
+glob = ["*.ts", "*.tsx", "*.js", "*.jsx", "*.json", "*.css", "*.md"]
+exclude = ["**/*.gen.ts", "**/dist/**", "**/build/**"]
+stage_fixed = true
+isolate = "prettier"
+timeout = "60s"
+
+[hooks.pre-commit.jobs.lint]
+run = "eslint --cache --max-warnings 0 {staged_files}"
+fix = "eslint --cache --fix {files}"
+glob = ["*.ts", "*.tsx", "*.js", "*.jsx"]
+exclude = ["**/*.gen.ts"]
+stage_fixed = true
+isolate = "eslint"
+env = { NODE_OPTIONS = "--max-old-space-size=2048" }
+timeout = "2m"
+
+[hooks.pre-commit.jobs.typecheck]
+run = "tsc --noEmit --pretty false"
+glob = ["*.ts", "*.tsx"]
+isolate = { name = "tsc", slots = 4 }
+timeout = "5m"
+
+[hooks.pre-push.jobs.test]
+run = "pnpm test --silent"
+timeout = "10m"

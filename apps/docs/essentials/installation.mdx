@@ -13,25 +13,24 @@ icon: "download"
 ## Install the binary
 
 <Tabs>
-  <Tab title="From source (recommended today)">
+  <Tab title="crates.io">
+    ```sh
+    cargo install betterhook-cli
+    ```
+
+    The binary lands in `$CARGO_HOME/bin/betterhook`. Make sure that's on your `PATH`.
+  </Tab>
+  <Tab title="From source">
     ```sh
     git clone https://github.com/leonardomso/betterhook
     cd betterhook
     cargo install --path apps/cli
     ```
-
-    The binary lands in `$CARGO_HOME/bin/betterhook`. Make sure that's on your `PATH`.
   </Tab>
   <Tab title="Homebrew (planned)">
     ```sh
     # not yet published
     brew install betterhook
-    ```
-  </Tab>
-  <Tab title="crates.io (planned)">
-    ```sh
-    # not yet published
-    cargo install betterhook-cli
     ```
   </Tab>
 </Tabs>
@@ -40,7 +39,7 @@ Verify:
 
 ```sh
 betterhook --version
-# betterhook 0.0.1
+# betterhook 0.1.0
 ```
 
 ## Set up a repo
@@ -68,7 +67,7 @@ betterhook --version
 
 ## Coexisting with other hook managers
 
-betterhook refuses to clobber a foreign `core.hooksPath` silently. You have three options.
+betterhook will not silently clobber a foreign `core.hooksPath`. You have three options.
 
 <AccordionGroup>
   <Accordion title="Takeover" icon="circle-dot">

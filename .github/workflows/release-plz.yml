@@ -23,7 +23,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run release-plz release-pr
-        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
         with:
           command: release-pr
         env:
@@ -31,12 +31,10 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   release:
-    name: Release
+    name: Tag and publish
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: read
       contents: write
-    needs: release-pr
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -49,7 +47,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run release-plz release
-        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
         with:
           command: release
         env:

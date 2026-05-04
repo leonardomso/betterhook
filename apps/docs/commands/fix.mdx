@@ -1,6 +1,6 @@
 ---
 title: "betterhook fix"
-description: "Run every job's fix = ... variant — the agent self-correction surface."
+description: "Run every job's fix = ... variant. The agent self-correction surface."
 icon: "wand-sparkles"
 ---
 
@@ -11,8 +11,8 @@ betterhook fix [--hook <name>] [--job <name>,...] [--worktree <path>]
 Builds a synthetic hook where each job's `run` is replaced with its `fix = ...`
 variant, then executes it. Jobs without a `fix` variant are dropped.
 
-This is the **agent self-correction surface**. When a formatter hook fails,
-an agent can run `betterhook fix` to auto-correct and retry.
+This is the agent self-correction surface. When a formatter hook fails,
+an agent runs `betterhook fix` to apply the auto-correction and retry the commit.
 
 ## Flags
 
@@ -93,6 +93,6 @@ $ betterhook fix
 
 <Note>
   `betterhook fix` uses the same streaming output, timeouts, and
-  coordinator locks as `run` — it's a full runner invocation, just with
-  the `fix` command substituted.
+  coordinator locks as `run`. It's a full runner invocation with the
+  `fix` command substituted for `run`.
 </Note>
