@@ -115,6 +115,6 @@ modified files so the commit captures the fix.
 
 ## Loop termination
 
-Agents should cap the self-correction loop at **one retry**. If `fix` →
-`run` still fails, the remaining errors need real intelligence. Don't
-hammer.
+Cap the self-correction loop at one retry. If `fix → run` still fails,
+the remaining errors need a real code change — hand them back to the
+LLM, don't loop on `fix`.
