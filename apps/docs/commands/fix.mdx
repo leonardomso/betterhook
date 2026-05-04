@@ -11,8 +11,8 @@ betterhook fix [--hook <name>] [--job <name>,...] [--worktree <path>]
 Builds a synthetic hook where each job's `run` is replaced with its `fix = ...`
 variant, then executes it. Jobs without a `fix` variant are dropped.
 
-This is the **agent self-correction surface**. When a formatter hook fails,
-an agent can run `betterhook fix` to auto-correct and retry.
+This is the agent self-correction surface. When a formatter hook fails,
+an agent runs `betterhook fix` to apply the auto-correction and retry the commit.
 
 ## Flags
 

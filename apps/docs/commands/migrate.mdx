@@ -51,10 +51,9 @@ Command-level:
 
 Listed in the generated `BETTERHOOK_MIGRATION_NOTES.md`:
 
-- `extends`, `remotes`, `templates` blocks — our implementation is different
-  and richer; rewrite by hand
+- `extends`, `remotes`, `templates` blocks — semantics differ; rewrite by hand
 - `scripts` (lefthook's shell-script loader) — use `run = "./scripts/foo.sh"` directly
-- `piped` — not yet supported; use `fail_fast = true` as an approximation
+- `piped` — not yet supported; use `fail_fast = true` as the closest equivalent
 
 ## Example
 

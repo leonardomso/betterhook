@@ -88,7 +88,6 @@ Both produce JSON; `explain` is the deeper one.
 
 ## Why agents care
 
-An agent that's about to suggest changes to a file can call `explain` first,
-check the resolved glob, and skip changes to files that wouldn't be linted
-anyway. Or flag that a change will trigger a slow typecheck and warn the
-user before proceeding.
+An agent about to propose a file change can call `explain` first, see which
+globs would match, and skip files that aren't linted at all. Or flag that
+a change will trigger a slow typecheck and warn the user before proceeding.

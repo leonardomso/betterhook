@@ -17,7 +17,7 @@ Emits a pretty-printed JSON document describing:
 - Any non-fatal inspection failures in `diagnostics` (for example a corrupt
   install manifest or unreadable speculative stats sidecar)
 
-Designed as the first call an agent makes after landing in a repo.
+Intended as the first call an agent makes after landing in a repo.
 
 ## Flags
 
@@ -29,7 +29,7 @@ Designed as the first call an agent makes after landing in a repo.
 
 ```json
 {
-  "betterhook_version": "0.0.2",
+  "betterhook_version": "0.1.0",
   "worktree": {
     "path": "/Users/you/repo",
     "git_dir": "/Users/you/repo/.git",
@@ -39,7 +39,7 @@ Designed as the first call an agent makes after landing in a repo.
     "manifest_path": "/Users/you/repo/.git/betterhook/installed.json",
     "wrapper_version": 1,
     "betterhook_bin": "/Users/you/.cargo/bin/betterhook",
-    "installed_for_versions": "0.0.2",
+    "installed_for_versions": "0.1.0",
     "hooks": [
       {
         "name": "pre-commit",
