@@ -7,182 +7,85 @@ icon: "history"
 All notable changes follow [Keep a Changelog](https://keepachangelog.com)
 and this project adheres to [semantic versioning](https://semver.org).
 
-## v0.0.2 — 2026-04-12
+Releases beyond v0.1.0 are managed by release-plz; the canonical
+changelog lives in `CHANGELOG.md` at the repository root and is
+regenerated from conventional commits on every release PR.
 
-Code-quality release. No new features, no schema changes. Every change
-preserves behavior except the async correctness fixes (faster under
-parallel load) and the perf wins that earn the "warm cache hit < 5 ms"
-v1 claim. 220 tests pass; 231 million fuzz iterations pass across six
-targets.
+## v0.1.0 — 2026-04-29
 
-### Fixed
-
-<AccordionGroup>
-  <Accordion title="Async correctness" icon="shield-check">
-    - `cache::lookup` and `cache::store_result` are now `async` and delegate to `tokio::task::spawn_blocking` — the commit-time cache hit path no longer blocks tokio workers
-    - `apply_stage_fixed` releases the `git_lock` during its read phase (only the `git add` write still holds it)
-    - File-watcher mpsc buffer tightened from 1024 → 256
-    - `doctor` uses `tokio::process` for its `git` subprocess calls
-  </Accordion>
-</AccordionGroup>
-
-### Performance
-
-<AccordionGroup>
-  <Accordion title="Warm cache hit path" icon="zap">
-    - Per-process memoized tool hash resolution — the first job pays the 3–5 ms `which` + mmap cost, every subsequent job using the same tool is effectively free
-    - Typed `Deserialize` structs replace `serde_json::Value` walking in every builtin parser; ~1–3 ms saved per 100 diagnostics
-    - `dispatch::hook_for_match` returns `Cow<Hook>` — saves a full Hook clone per dispatch on configs with 5+ jobs
-    - `CacheKey::relative_path` returns `PathBuf` instead of `String`
-    - `resolve_packages` clones each staged file exactly once
-  </Accordion>
-</AccordionGroup>
-
-### Internal
-
-<AccordionGroup>
-  <Accordion title="Refactors + dedup" icon="wrench">
-    - `ExecutionContext` struct replaces 7-argument scheduler signatures
-    - `execute_job_in_dag` extracted from `run_parallel`'s 85-line closure
-    - `run_command` split into `spawn / wait / resolve / drain` helpers
-    - Cache store `for_each_entry` walker unifies `len` / `stats` / `clear` / `verify`
-    - Shared `build_globset` helper, shared builtin parser helpers
-    - Test helpers consolidated into `tests/common`
-    - Fuzz harnesses behind a single `fuzz-harnesses` feature
-    - `RawJob` / `RawConfig` defaults cut ~90 lines of importer boilerplate
-    - `ConfigError` boxed inside `InstallError` and `StatusError` — two `#![allow(clippy::result_large_err)]` removed
-  </Accordion>
-</AccordionGroup>
-
-## v0.0.2-alpha.1 — 2026-04-11
-
-The launch release. Adds the capability DAG scheduler, the
-content-addressable hook cache, on-save speculative execution,
-monorepo `[packages.<name>]` blocks with path filters, KDL alongside
-TOML / YAML / JSON, persistent per-repo daemons via launchd / systemd,
-twelve builtin linter wrappers with structured JSON diagnostics, and
-the `betterhook doctor` health check. Single binary — `betterhookd`
-is gone in favor of a hidden `betterhook serve` subcommand.
+First public release. The CLI, runner, daemon, cache, and the multi-format
+config parser are all in place; the docs site, recipes, and packaging
+scaffolds (Homebrew, npm, crates.io) ship with it.
 
 ### Added
 
 <AccordionGroup>
-  <Accordion title="Capability DAG" icon="git-merge">
-    - Schema gains `reads`, `writes`, `network`, `concurrent_safe` per job
-    - Resolver builds a real DAG, runs every root in parallel, serializes only conflicting pairs
-    - `priority = [...]` becomes a tiebreaker, not the only ordering signal
-    - `betterhook status` and `betterhook explain` surface the resolved graph
+  <Accordion title="Configuration" icon="settings">
+    - Multi-format parser: TOML, YAML, KDL, and JSON, all lowering to a single canonical AST
+    - `extends` inheritance with depth-first resolution, cross-format support, circular detection, and a `betterhook.local.*` override layer
+    - Fileset templates `{staged_files}`, `{push_files}`, `{all_files}`, `{files}` with `globset` filtering
+    - `[packages.<name>]` blocks for monorepos with path filters and per-package hook inheritance
+    - Per-job capability declarations: `reads`, `writes`, `network`, `concurrent_safe`
   </Accordion>
-  <Accordion title="Content-addressable cache" icon="database">
-    - Keyed on `blake3(content) + blake3(tool_binary) + blake3(args)`
-    - Tool binary hashing follows mise / nvm shims so upgrades naturally invalidate
-    - Per-input mtime freshness gate so a stale prewarm never silently passes
-    - `betterhook cache stats | clear | verify` for agent introspection
-  </Accordion>
-  <Accordion title="Speculative execution" icon="zap">
-    - `notify`-backed file watcher with graceful degradation on NFS / sandboxed containers
-    - Daemon prewarms `concurrent_safe` jobs on save, results land in the CA cache
-    - Commit-time runner just hits the cache — golden path is zero subprocesses
-  </Accordion>
-  <Accordion title="Monorepo packages" icon="boxes">
-    - `[packages.<name>]` config blocks with `path` filters
-    - Per-package hook inheritance with override and skip semantics
-    - Packages run in parallel; git-index writes serialized via shared mutex
-  </Accordion>
-  <Accordion title="Builtins + doctor + import" icon="package">
-    - 12 builtins: rustfmt, clippy, prettier, eslint, ruff, black, gofmt, govet, biome, oxlint, shellcheck, gitleaks
-    - Each with structured JSON diagnostics on the same NDJSON stream
-    - `betterhook doctor` walks 7 health checks, exits non-zero on fail
-    - `betterhook import --from <husky|lefthook|hk|pre-commit>` replaces the v0 `migrate` command
-  </Accordion>
-</AccordionGroup>
 
-### Changed
-
-- `betterhook migrate` is now a hidden alias for `betterhook import --from-format lefthook`
-- `betterhookd` is no longer a separate binary — `betterhook serve` is the new entry point
-
-## v0.0.1 — 2026-04-11
-
-Initial scaffolding release. Built across 20 phases in the project plan
-and ready for in-repo dogfooding.
-
-### Added
-
-<AccordionGroup>
-  <Accordion title="Foundation" icon="layers">
-    - Turborepo monorepo with `apps/betterhook` (library + `betterhookd` binary) and `apps/cli` (the `betterhook` CLI)
-    - Cargo workspace on resolver v3, edition 2024, Rust 1.86 MSRV
-    - Multi-format config parser supporting TOML, YAML, JSON, all lowering to one canonical AST via serde
-    - `extends` inheritance with depth-first resolution, cross-format support, circular detection, and `betterhook.local.*` override layer
-    - Async git worktree introspection via `tokio::process::Command` — never libgit2/gix, deliberately
-    - Fileset templates (`{staged_files}`, `{push_files}`, `{all_files}`, `{files}`) with NUL-delimited parsing and `globset` filtering
+  <Accordion title="Runner" icon="play">
+    - Sequential and parallel executors with line-streaming subprocess output through a single `OutputMultiplexer` actor
+    - Capability DAG scheduler — independent jobs run in parallel, conflicting pairs serialize automatically
+    - Shared `Cancel` latch propagates `fail_fast` aborts to every in-flight child, including SIGKILL plus reader-task abort to avoid orphan-pipe hangs
+    - Per-job timeouts via humantime, reported as exit code 124
+    - `stage_fixed` via before/after unstaged snapshots, with parallel jobs serialized through a shared git-index mutex
+    - Untracked-file stash safety with verified pop
   </Accordion>
 
   <Accordion title="Install model" icon="download">
-    - Single byte-identical POSIX wrapper in the shared `<common-dir>/hooks/` dir
-    - At runtime, wrapper uses `git rev-parse --show-toplevel` to identify the current worktree and exec's into `betterhook __dispatch`
+    - Single byte-identical POSIX wrapper installed into the shared `<common-dir>/hooks/`
+    - At runtime the wrapper resolves the active worktree via `git rev-parse --show-toplevel` and exec's into `betterhook __dispatch`
     - SHA-256 manifest in `<common-dir>/betterhook/installed.json` so uninstall never touches user-modified hooks
-    - `core.hooksPath` takeover/refuse semantics for coexistence with other hook tools
-    - `__dispatch` subcommand resolves the per-worktree config and emits soft-miss exits for unconfigured worktrees
-  </Accordion>
-
-  <Accordion title="Execution engine" icon="play">
-    - Sequential executor with line-streaming subprocess output via a central `OutputMultiplexer` actor
-    - Parallel executor with a `tokio::sync::Semaphore` and priority-ordered spawn — directly fixes lefthook #846
-    - Shared `Cancel` latch ensures in-flight run_commands SIGKILL their children on `fail_fast`
-    - `kill_on_drop(true)` + explicit abort of stdout/stderr reader tasks on cancel or timeout
-    - Untracked-file stash safety via unique-message `git stash` with verified pop — fixes lefthook #833
-    - `stage_fixed` via before/after unstaged snapshots, with parallel jobs serialized through a shared git-index mutex
-    - Per-job timeouts parsed by humantime, enforced in the select!, reported as exit code 124
-    - `BETTERHOOK_SKIP` / `BETTERHOOK_ONLY` env vars and matching CLI flags
-  </Accordion>
-
-  <Accordion title="Agent surfaces" icon="bot">
-    - NDJSON `--json` output with stable event kinds (`job_started`, `line`, `job_finished`, `job_skipped`, `summary`)
-    - `betterhook status` prints a JSON snapshot of installed hooks, SHA integrity, resolved config, and worktree identity
-    - End-to-end linked-worktree integration tests verify the headline property
+    - `core.hooksPath` takeover semantics for coexistence with husky / pre-commit
   </Accordion>
 
   <Accordion title="Coordinator daemon" icon="server">
-    - `betterhookd` opt-in daemon with length-prefixed bincode over a Unix socket
-    - `LockKey → Arc<Semaphore>` registry with lazy creation and 60s idle linger
-    - Per-connection `HashMap<token, HeldPermit>` so connection drop releases every held permit
-    - `fs4` advisory flock fallback under `<common-dir>/betterhook/locks/<key>.lock`
-    - Automatic `CARGO_TARGET_DIR=<worktree>/target` injection for `ToolPath::PerWorktree` on cargo
+    - Opt-in `betterhook serve` daemon with length-prefixed bincode over a Unix socket
+    - `LockKey → Arc<Semaphore>` registry with lazy creation and idle-exit lifecycle
+    - Per-connection held-permit map so a connection drop releases every permit
+    - `fs4` advisory flock fallback when the daemon is unavailable
     - `BETTERHOOK_NO_LOCKS` / `--no-locks` escape hatch
+  </Accordion>
+
+  <Accordion title="Content-addressable cache" icon="database">
+    - Keyed on `blake3(content) + blake3(tool_binary) + blake3(args)`
+    - Tool binary hashing follows mise / nvm shims so version bumps invalidate cleanly
+    - Per-input mtime freshness gate prevents stale prewarms from passing silently
+    - `betterhook cache stats | clear | verify` for introspection
+  </Accordion>
+
+  <Accordion title="Speculative execution" icon="zap">
+    - `notify`-backed file watcher with graceful degradation on NFS and sandboxed containers
+    - Daemon prewarms `concurrent_safe` jobs on save; results land in the cache so commit-time runs are cache hits
+  </Accordion>
+
+  <Accordion title="Builtins, doctor, import" icon="package">
+    - 12 builtin wrappers: rustfmt, clippy, prettier, eslint, ruff, black, gofmt, govet, biome, oxlint, shellcheck, gitleaks
+    - Structured diagnostics emitted on the same NDJSON stream as job output
+    - `betterhook doctor` walks health checks for install, config, tools, cache, and watcher
+    - `betterhook import --from <husky|lefthook|hk|pre-commit>` for migrating existing configs
+    - `betterhook migrate` retained as a hidden alias for `import --from-format lefthook`
   </Accordion>
 
   <Accordion title="CLI surfaces" icon="terminal">
     - `betterhook run <hook>` with `--dry-run`, `--json`, `--skip`, `--only`
-    - `betterhook explain --hook <name> [--job]` returns a JSON snapshot of resolved jobs
-    - `betterhook fix` runs every job's `fix = ...` variant — the agent self-correction surface
-    - `betterhook migrate --from lefthook.yml` converts real lefthook configs and writes migration notes
+    - `betterhook explain --hook <name> [--job]` prints the resolved plan without executing
+    - `betterhook fix` runs every job's `fix = ...` variant
+    - `betterhook status` prints a JSON snapshot of installed hooks, SHA integrity, resolved config, and worktree identity
+    - `betterhook completions <shell>` for bash, zsh, fish, elvish, powershell
+    - NDJSON `--json` event stream with stable kinds (`job_started`, `line`, `job_finished`, `job_skipped`, `summary`)
+    - `BETTERHOOK_SKIP` / `BETTERHOOK_ONLY` env vars and matching CLI flags
   </Accordion>
 
-  <Accordion title="Tooling" icon="wrench">
-    - Criterion benches: `config_parse` and `output_multiplexer`
-    - `xtask bench` driver with CI-gating exit codes
-    - cargo-fuzz targets for the multi-format parser and the dispatch path detection
-    - Fuzz crate excluded from the main workspace so stable-toolchain builds never need nightly
-  </Accordion>
-
-  <Accordion title="Documentation" icon="book">
-    - Full README with install, config, agent surfaces, architecture, exit codes
-    - Daemon IPC wire format documented in reference/protocol
-    - This Mintlify docs site under `apps/docs/`
+  <Accordion title="Docs, recipes, packaging" icon="book">
+    - Mintlify docs site under `apps/docs/`
+    - Drop-in `betterhook.toml` recipes in `recipes/` for common stacks
+    - Homebrew formula and npm wrapper scaffolds in `packaging/`
+    - Criterion benches and a cargo-fuzz harness for the multi-format parser and dispatch path
   </Accordion>
 </AccordionGroup>
-
-### Known gaps
-
-- Daemon client is flock-only in v0.0.1; socket-backed acquire path, spawn retry, and health handshake land next
-- Stash safety covers the untracked-file case but not the stacked "unstaged delta under staged delta" case — a patch-based approach is planned for a later phase
-- `xtask stress` and the nightly lefthook-compat diff suite are stubbed
-- `remotes:` config inheritance (with SHA pinning) deferred to v0.3
-- `LockfileGuarded` isolation (the prettier-on-pnpm-lock fix) deferred to v0.3
-
-### Dependency upgrades
-
-- Rust toolchain bumped to 1.94.1
-- Tokio 1.41 → 1.51, clap 4.5 → 4.6, miette 7 → 7.6, criterion 0.5 → 0.8, fs4 0.12 → 0.13, sha2 0.10 → 0.11, toml 0.8 → 1.1
