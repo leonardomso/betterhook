@@ -6,6 +6,14 @@ project adheres to [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/leonardomso/betterhook/compare/betterhook-v0.1.0...betterhook-v0.1.1) - 2026-05-04
+
+### Other
+
+- add header banner, recipes, benchmarks, prominent migration
+- *(readme)* restructure for scannability with badges and collapsibles
+- *(deps)* bump fs4 to 1.1.0
+
 ## [0.1.0] - 2026-04-29
 
 First public release to crates.io and npm. Adds shell completions,
