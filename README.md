@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/header.jpg" alt="betterhook" width="100%" />
+</p>
+
 <h1 align="center">betterhook</h1>
 
 <p align="center">
@@ -26,6 +30,12 @@
 A single static Rust binary that replaces lefthook, husky, and pre-commit when you're running multiple AI coding agents in parallel — each in its own [git worktree](https://git-scm.com/docs/git-worktree), each opening its own PR, all sharing one `.git` directory.
 
 **4 config formats** · **12 builtin linters** · **~6 MB binary** · **~30 ms cold start** · **streaming I/O**
+
+> **Already on lefthook, husky, hk, or pre-commit?** One command imports your config and takes over the hook wrappers — no rewrites:
+> ```sh
+> betterhook import --from lefthook.yml && betterhook install --takeover
+> ```
+> A `BETTERHOOK_MIGRATION_NOTES.md` lists anything that didn't translate one-to-one. See [Migration](#migration) below.
 
 ## Why betterhook
 
@@ -91,15 +101,6 @@ betterhook status     # confirm everything looks right
 git commit -am "go"   # hooks run, per-worktree, correctly
 ```
 
-**Migrating from lefthook, husky, hk, or pre-commit?**
-
-```sh
-betterhook import --from lefthook.yml
-betterhook install --takeover
-```
-
-This converts your existing config and writes a `BETTERHOOK_MIGRATION_NOTES.md` listing anything that didn't translate one-to-one.
-
 ## What's inside
 
 | Capability | What it does |
@@ -112,6 +113,75 @@ This converts your existing config and writes a `BETTERHOOK_MIGRATION_NOTES.md` 
 | **Multi-format config** | TOML, YAML, JSON, KDL — all parse to the same AST. `extends` works across formats. |
 | **12 builtin linter wrappers** | `rustfmt`, `clippy`, `prettier`, `eslint`, `ruff`, `black`, `gofmt`, `govet`, `biome`, `oxlint`, `shellcheck`, `gitleaks`. |
 | **NDJSON output for agents** | Stable wire protocol so AI agents can parse, retry, and self-correct without scraping logs. |
+
+## Benchmarks
+
+Reproducible — run `cargo xtask bench-monorepo` on your own hardware and post the diff. Synthetic 10,000-file repo across 5 packages, noop hook (`run = "true"`), measured on an M1 MacBook Pro:
+
+| Measurement | betterhook 0.1.0 | lefthook 1.x |
+|---|---:|---:|
+| Binary startup (`--version`) | **<10 ms** | ~25 ms |
+| `explain` (no execution) | **~10 ms** | n/a |
+| Pre-commit on 10k files (cold) | **126 ms** | 139 ms |
+| Pre-commit on 10k files (warm) | **107 ms** | 162 ms |
+| Binary size (stripped, arm64) | **4.5 MB** | ~15 MB |
+
+Reproduce:
+
+```sh
+cargo build --release -p betterhook-cli
+PATH="$PWD/target/release:$PATH" cargo xtask bench-monorepo
+```
+
+Output goes to `target/bench-results.md`. The harness installs `n/a` rows for any tool not on `PATH`, so it works without lefthook or `hk` installed — but the comparison only fills in for tools you actually have.
+
+Where betterhook *really* pulls ahead is what synthetic numbers can't show: streaming output (memory stays flat under chatty jobs — lefthook OOMs on 4-worktree fan-out), cache hits (sub-ms replay of captured output), and worktree correctness (lefthook can't even install in a linked worktree, exit 128).
+
+## Recipes
+
+Drop-in `betterhook.toml` configs for common stacks — copy, edit, install. Every recipe is verified to parse against the current schema in CI.
+
+| Recipe | Stack | Highlights |
+|---|---|---|
+| [`recipes/typescript.toml`](recipes/typescript.toml) | TypeScript / JS monorepo | Prettier + ESLint + tsc, sharded `tsc` semaphore |
+| [`recipes/rust.toml`](recipes/rust.toml) | Rust workspace | rustfmt + clippy + tests, per-worktree `CARGO_TARGET_DIR` |
+| [`recipes/python.toml`](recipes/python.toml) | Python | Ruff format + lint + mypy |
+| [`recipes/go.toml`](recipes/go.toml) | Go module | gofmt + govet + go test (uses builtins) |
+| [`recipes/polyglot.toml`](recipes/polyglot.toml) | Mixed monorepo | All four stacks above, glob-routed |
+
+```sh
+cp recipes/typescript.toml /path/to/your-repo/betterhook.toml
+betterhook install
+```
+
+Or extend one and override just the bits you need:
+
+```toml
+extends = ["./.betterhook/typescript.toml"]
+
+[hooks.pre-commit.jobs.lint]
+glob = ["src/**/*.ts"]
+```
+
+Full notes in [`recipes/README.md`](recipes/README.md).
+
+## Migration
+
+betterhook ships an importer for the four hook managers people are most likely already using. The flow is the same in every case:
+
+```sh
+betterhook import --from <existing-config>
+betterhook install --takeover
+```
+
+| From | Command | Notes |
+|---|---|---|
+| lefthook | `betterhook import --from lefthook.yml` | Most one-to-one — `glob`, `exclude`, `parallel`, `fail_fast`, `priority` map directly. `skip` conditions become `skip` strings. |
+| husky | `betterhook import --from .husky/pre-commit --from-format husky` | One job per hook script. Multi-line scripts become a single `run` block — split them after if you want parallelism. |
+| pre-commit | `betterhook import --from .pre-commit-config.yaml --from-format pre-commit` | Each `repo`/`hook` becomes a betterhook job. Python-only `language` repos translate; the importer notes any that don't. |
+| hk | `betterhook import --from hk.toml --from-format hk` | Native TOML, almost a passthrough. |
+
+The importer always writes a `BETTERHOOK_MIGRATION_NOTES.md` next to your new config, listing anything that didn't translate (custom Python language repos, in-repo hook scripts, etc.). `--takeover` rewrites `.git/hooks/` so your existing tool stops firing — uninstall it from your package manager whenever you're ready.
 
 ## Configuration
 

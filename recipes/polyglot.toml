@@ -1,0 +1,64 @@
+# Polyglot monorepo recipe.
+#
+# A single config that handles a TypeScript frontend, a Rust backend,
+# Python ML scripts, and Go tooling. Each job's `glob` keeps it scoped
+# to its own files, so a commit that only touches TS doesn't trigger
+# the Rust toolchain (and vice versa).
+
+[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+fail_fast = false
+priority = ["secrets", "fmt-ts", "fmt-rust", "fmt-py", "fmt-go", "lint-ts", "clippy", "ruff", "vet"]
+
+# Run gitleaks first so we never spend time formatting a commit that's
+# going to be blocked anyway.
+[hooks.pre-commit.jobs.secrets]
+builtin = "gitleaks"
+
+[hooks.pre-commit.jobs.fmt-ts]
+run = "prettier --check {staged_files}"
+fix = "prettier --write {files}"
+glob = ["*.ts", "*.tsx", "*.js", "*.jsx", "*.json", "*.css", "*.md"]
+exclude = ["**/*.gen.ts"]
+stage_fixed = true
+isolate = "prettier"
+
+[hooks.pre-commit.jobs.fmt-rust]
+builtin = "rustfmt"
+stage_fixed = true
+
+[hooks.pre-commit.jobs.fmt-py]
+run = "ruff format --check {staged_files}"
+fix = "ruff format {files}"
+glob = ["*.py"]
+stage_fixed = true
+isolate = "ruff"
+
+[hooks.pre-commit.jobs.fmt-go]
+builtin = "gofmt"
+stage_fixed = true
+
+[hooks.pre-commit.jobs.lint-ts]
+run = "eslint --cache --max-warnings 0 {staged_files}"
+fix = "eslint --cache --fix {files}"
+glob = ["*.ts", "*.tsx", "*.js", "*.jsx"]
+isolate = "eslint"
+timeout = "2m"
+
+[hooks.pre-commit.jobs.clippy]
+run = "cargo clippy --workspace --all-targets -- -D warnings"
+glob = ["*.rs", "Cargo.toml", "Cargo.lock"]
+isolate = { tool = "cargo", target_dir = "per-worktree" }
+timeout = "5m"
+
+[hooks.pre-commit.jobs.ruff]
+builtin = "ruff"
+
+[hooks.pre-commit.jobs.vet]
+builtin = "govet"
+
+[hooks.commit-msg.jobs.conventional]
+run = "npx --yes @commitlint/cli@latest --edit $1"

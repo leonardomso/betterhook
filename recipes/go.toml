@@ -1,0 +1,30 @@
+# Go module recipe.
+#
+# Uses betterhook builtins for gofmt and govet to skip the boilerplate.
+# `go test ./...` runs sequentially via the `go` tool's own coordination
+# (it's already test-cache-aware), so no isolation needed.
+
+[meta]
+version = 1
+
+[hooks.pre-commit]
+parallel = true
+fail_fast = false
+priority = ["fmt", "vet", "test"]
+
+[hooks.pre-commit.jobs.fmt]
+builtin = "gofmt"
+stage_fixed = true
+
+[hooks.pre-commit.jobs.vet]
+builtin = "govet"
+
+[hooks.pre-commit.jobs.test]
+run = "go test ./..."
+glob = ["*.go", "go.mod", "go.sum"]
+timeout = "5m"
+
+[hooks.pre-push.jobs.staticcheck]
+run = "staticcheck ./..."
+glob = ["*.go"]
+timeout = "2m"
