@@ -25,7 +25,7 @@
     "postinstall": "node install.js"
   },
   "engines": {
-    "node": ">=18.20.8"
+    "node": ">=24.15.0"
   },
   "os": [
     "darwin",
