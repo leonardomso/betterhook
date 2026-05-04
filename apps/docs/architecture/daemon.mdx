@@ -89,8 +89,8 @@ order. The three shapes of `LockKey.name`:
 ## Client-side fallback
 
 If every daemon spawn attempt fails, the lock client falls back to
-`fs4::FileExt::lock_exclusive` on `<common-dir>/betterhook/locks/<key>.lock`.
-This degrades:
+`fs4::FileExt::lock` (advisory exclusive flock) on
+`<common-dir>/betterhook/locks/<key>.lock`. This degrades:
 
 - Sharded semaphores → plain mutex (1 permit)
 - `LockKey.permits > 1` → ignored
