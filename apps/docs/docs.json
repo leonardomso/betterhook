@@ -81,15 +81,6 @@
             ]
           },
           {
-            "group": "Agent integration",
-            "pages": [
-              "agents/overview",
-              "agents/ndjson",
-              "agents/self-correction",
-              "agents/conductor"
-            ]
-          },
-          {
             "group": "Architecture",
             "pages": [
               "architecture/overview",
@@ -119,6 +110,7 @@
             "pages": [
               "reference/exit-codes",
               "reference/env-vars",
+              "reference/ndjson",
               "reference/protocol",
               "reference/performance"
             ]

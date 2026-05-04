@@ -36,13 +36,6 @@ This file lists every page in the betterhook documentation. Each entry links to 
 - [betterhook import](https://betterhook.dev/commands/import): Convert lefthook, husky, hk, or pre-commit configs into `betterhook.toml`.
 - [betterhook migrate (deprecated)](https://betterhook.dev/commands/migrate): Hidden alias for `betterhook import --from-format lefthook`.
 
-## Agent integration
-
-- [Agent integration overview](https://betterhook.dev/agents/overview): Why betterhook was built agent-first and what that buys you.
-- [NDJSON output](https://betterhook.dev/agents/ndjson): The stable event schema for `betterhook run --json`.
-- [Self-correction loop](https://betterhook.dev/agents/self-correction): The canonical run → fix → run pattern.
-- [Conductor integration](https://betterhook.dev/agents/conductor): Running betterhook across multiple agent worktrees in Conductor.
-
 ## Architecture
 
 - [Architecture overview](https://betterhook.dev/architecture/overview): How betterhook is organized and how a commit flows through it end to end.
@@ -63,6 +56,7 @@ This file lists every page in the betterhook documentation. Each entry links to 
 
 - [Exit codes](https://betterhook.dev/reference/exit-codes): The stable exit-code contract every betterhook subcommand honors.
 - [Environment variables](https://betterhook.dev/reference/env-vars): `BETTERHOOK_SKIP`, `BETTERHOOK_ONLY`, `BETTERHOOK_NO_LOCKS`, `BETTERHOOK_DAEMON_SOCK`, and what's deliberately not used.
+- [NDJSON output](https://betterhook.dev/reference/ndjson): The stable event schema emitted by `betterhook run --json`.
 - [Wire protocol](https://betterhook.dev/reference/protocol): The bincode IPC format for direct integration with the coordinator daemon.
 - [Performance targets](https://betterhook.dev/reference/performance): Cold start, idle RSS, runner RSS, scaling targets, and how to measure locally.
 
