@@ -6,7 +6,7 @@ publish = false
 description = "afl.rs (American Fuzzy Lop) fuzz harnesses for betterhook."
 
 [dependencies]
-afl = "0.18"
+afl = "0.18.1"
 betterhook = { path = "..", features = ["fuzz-harnesses"] }
 
 [[bin]]
