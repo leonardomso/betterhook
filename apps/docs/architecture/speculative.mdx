@@ -7,8 +7,8 @@ icon: "zap"
 The coordinator daemon watches every active worktree with `notify`,
 debounces save events per file, resolves which `concurrent_safe` jobs
 match the touched paths, and runs them through the same DAG executor
-the commit-time runner uses. Results land in the CA cache. When you
-finally `git commit`, the runner just hits the cache.
+the commit-time runner uses. Results land in the CA cache. By the
+time you `git commit`, the runner reads from the cache.
 
 ## Configuration
 

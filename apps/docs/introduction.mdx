@@ -1,6 +1,6 @@
 ---
 title: "Introduction"
-description: "A fast, memory-tight, worktree-native git hooks manager built for the era of parallel AI coding agents."
+description: "A fast, memory-tight, worktree-native git hooks manager for teams running coding agents in parallel."
 icon: "book-open"
 ---
 
@@ -9,7 +9,7 @@ icon: "book-open"
 A single static Rust binary, ~6 MB stripped:
 
 - ~30 ms cold start, ~50 ms no-op hook run
-- Line-streaming subprocess I/O via Tokio — output is live, memory stays constant
+- Line-streaming subprocess I/O via Tokio. Output is live, memory stays constant
 - One wrapper in the shared `.git/hooks/` dir resolves the current worktree at commit time and loads *its* config
 - Opt-in coordinator daemon (`betterhook serve`) that serializes tool conflicts across worktrees
 - NDJSON output, machine-readable status, stable exit codes, and a `fix` subcommand for agent self-correction
@@ -42,5 +42,5 @@ Several agents commit on overlapping branches, each in its own worktree, each ru
 [Why betterhook](/why-betterhook) walks through the specific lefthook issues this is built to fix.
 
 <Note>
-  betterhook is pre-1.0. Schema and CLI may change between minor versions. See the [changelog](/changelog) for current state.
+  betterhook is pre-1.0. Schema and CLI may change between minor versions. See the [changelog](/changelog).
 </Note>

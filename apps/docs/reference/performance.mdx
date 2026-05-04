@@ -30,8 +30,8 @@ on every CI run. Regressions greater than 10% fail the build.
   </Accordion>
 
   <Accordion title="Daemon idle RSS < 8 MB" icon="server">
-    A Conductor user can have 10 repos with a daemon running in each;
-    8 MB × 10 = 80 MB total. Larger and the daemon shows up in monitoring.
+    A user with 10 repos can run a daemon in each; 8 MB × 10 = 80 MB
+    total. Larger and the daemon shows up in monitoring.
   </Accordion>
 
   <Accordion title="Runner RSS < 30 MB for 8 parallel jobs" icon="layers">
@@ -43,7 +43,7 @@ on every CI run. Regressions greater than 10% fail the build.
 
   <Accordion title="Linear scaling across worktrees" icon="trending-up">
     N worktrees committing concurrently should take O(N) wall time, not
-    O(N²). That forces us to serialize only the actually shared resources
+    O(N²). That forces us to serialize only the shared resources
     (`.git/index`, tool caches) and let everything else run free.
   </Accordion>
 </AccordionGroup>

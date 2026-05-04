@@ -8,8 +8,8 @@ Most hooks managers parallelize jobs by hand-tuned `priority` lists.
 betterhook ships a real DAG instead. Every job declares what it
 **reads**, what it **writes**, whether it touches the **network**, and
 whether it's **concurrent_safe**. The runner builds a graph from those
-declarations and runs every root in parallel — only the pairs that
-actually conflict are serialized.
+declarations and runs every root in parallel. Only conflicting pairs
+are serialized.
 
 ## Declaring capabilities
 
@@ -44,13 +44,13 @@ ordering at the hook level.
 
 ## What it gets you
 
-- **Safer parallelism by default.** Two formatters that touch the
-  same files are serialized without you adding a `priority` list.
-- **More parallelism.** A `cargo clippy` and a `prettier` job no
-  longer block each other when they declare disjoint reads.
-- **A drop-in cache.** Because every `concurrent_safe` job is hashed
-  on its inputs, the cache only fires for jobs the DAG already
-  considers safe to replay.
+- Safer parallelism by default: two formatters that touch the same
+  files are serialized without you adding a `priority` list.
+- More parallelism: a `cargo clippy` and a `prettier` job no longer
+  block each other when they declare disjoint reads.
+- A drop-in cache: because every `concurrent_safe` job is hashed on
+  its inputs, the cache only fires for jobs the DAG already considers
+  safe to replay.
 
 ## Inspecting the graph
 

@@ -7,12 +7,12 @@ icon: "rocket"
 <Steps>
   <Step title="Install the binary">
     ```sh
-    cargo install --path apps/cli
-    # or, once published:
-    # cargo install betterhook-cli
+    cargo install betterhook-cli
+    # or, from a checkout:
+    # cargo install --path apps/cli
     ```
 
-    On macOS, a release tarball is also available on GitHub — drop the binary into `/usr/local/bin`.
+    On macOS, a release tarball is also available on GitHub. Drop the binary into `/usr/local/bin`.
   </Step>
 
   <Step title="Scaffold a starter config">
@@ -32,9 +32,9 @@ icon: "rocket"
     ```
 
     Writes a POSIX wrapper to `<git-common-dir>/hooks/pre-commit`. The wrapper
-    is byte-identical for every worktree of this repo — at commit time it
+    is byte-identical for every worktree of this repo. At commit time it
     runs `git rev-parse --show-toplevel` and dispatches to whichever worktree
-    is actually committing.
+    is committing.
 
     <Note>
       If husky or pre-commit have claimed `core.hooksPath`, pass `--takeover` to replace them.
@@ -96,7 +96,7 @@ icon: "rocket"
     The event schema for `betterhook run --json`, for agents and CI parsing.
   </Card>
   <Card title="Architecture" icon="layers" href="/architecture/overview">
-    How the worktree-aware wrapper actually works at commit time.
+    How the worktree-aware wrapper works at commit time.
   </Card>
   <Card title="Commands" icon="terminal" href="/commands/overview">
     Every subcommand with flags and examples.

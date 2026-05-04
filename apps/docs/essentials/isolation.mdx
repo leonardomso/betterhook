@@ -4,10 +4,11 @@ description: "Tool mutexes, sharded semaphores, and automatic CARGO_TARGET_DIR i
 icon: "lock"
 ---
 
-When several worktrees run the same tool in parallel, things break: ESLint
-cache writes race, prettier corrupts `pnpm-lock.yaml`, cargo builds collide
-on the shared `target/`. `isolate` is the per-job declaration that tells
-the coordinator (daemon, with a flock fallback) how to serialize them.
+When several worktrees run the same tool in parallel, ESLint cache
+writes race, prettier corrupts `pnpm-lock.yaml`, and cargo builds
+collide on the shared `target/`. `isolate` is the per-job declaration
+that tells the coordinator (daemon, with a flock fallback) how to
+serialize them.
 
 ## The three shapes
 
