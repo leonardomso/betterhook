@@ -4,15 +4,15 @@ description: "A fast, memory-tight, worktree-native git hooks manager built for 
 icon: "book-open"
 ---
 
-**betterhook** is a git hooks manager built for teams running multiple coding agents (Claude Code, Cursor, Codex, Aider, ...) in parallel, each in its own git worktree.
+**betterhook** is a git hooks manager for teams running coding agents (Claude Code, Cursor, Codex, Aider, ...) in parallel, each in its own git worktree.
 
-It's a single static Rust binary:
+A single static Rust binary, ~6 MB stripped:
 
-- **~6 MB stripped**, **~30 ms binary start**, **~50 ms no-op hook run**
-- **Line-streaming subprocess I/O** via Tokio — output is live, memory is constant
-- **Worktree-native dispatch**: one wrapper in the shared `.git/hooks/` dir resolves the current worktree at commit time and loads *its* config
-- **Opt-in coordinator daemon** (`betterhook serve`) that serializes tool conflicts across worktrees
-- **Agent-first**: NDJSON output, machine-readable status, stable exit codes, a `fix` subcommand for self-correction
+- ~30 ms cold start, ~50 ms no-op hook run
+- Line-streaming subprocess I/O via Tokio — output is live, memory stays constant
+- One wrapper in the shared `.git/hooks/` dir resolves the current worktree at commit time and loads *its* config
+- Opt-in coordinator daemon (`betterhook serve`) that serializes tool conflicts across worktrees
+- NDJSON output, machine-readable status, stable exit codes, and a `fix` subcommand for agent self-correction
 
 ```sh
 betterhook init           # scaffold betterhook.toml
@@ -37,30 +37,10 @@ git commit -am "go"       # your hooks run, correctly, per-worktree
 
 ## The problem
 
-The workflow most teams are moving to: multiple coding agents running in parallel, each on its own branch in a separate git worktree, each opening its own PR. Every agent's pre-commit hook runs formatters, linters, and tests. **Today they trip over each other.**
+Several agents commit on overlapping branches, each in its own worktree, each running formatters and linters in pre-commit. They share a common git dir, a single `cargo target/`, an ESLint cache, a prettier lockfile. Under that load, hook managers built for one developer in one checkout fall over: installs fail in linked worktrees, subprocess output buffers in memory, parallel scheduling ignores priority, untracked files trip formatters.
 
-<AccordionGroup>
-  <Accordion title="lefthook install fails in linked worktrees">
-    Installing from anywhere other than the primary worktree errors with exit 128. See [evilmartians/lefthook#901](https://github.com/evilmartians/lefthook/issues/901).
-  </Accordion>
-  <Accordion title="Go's os/exec buffers entire subprocess output in memory">
-    Under 4 agents × N parallel jobs across 4 worktrees, lefthook regularly OOMs.
-  </Accordion>
-  <Accordion title="parallel: true silently ignores priority ordering">
-    There's no way to make high-priority checks run first under contention. See [#846](https://github.com/evilmartians/lefthook/issues/846).
-  </Accordion>
-  <Accordion title="Untracked files trip formatter hooks">
-    Formatters see files that aren't part of the commit and flag them as false positives. See [#833](https://github.com/evilmartians/lefthook/issues/833).
-  </Accordion>
-  <Accordion title="ESLint cache, cargo target/, prettier on lockfiles">
-    All corrupt under concurrent worktree runs. No tool today coordinates them.
-  </Accordion>
-</AccordionGroup>
-
-## The solution
-
-betterhook is a ground-up rewrite in Rust with the worktree problem as its first-class design constraint. [Read why](/why-betterhook) or [jump straight to the quickstart](/quickstart).
+[Why betterhook](/why-betterhook) walks through the specific lefthook issues this is built to fix.
 
 <Note>
-betterhook is in active development. See the [changelog](/changelog) for the latest release and known gaps.
+  betterhook is pre-1.0. Schema and CLI may change between minor versions. See the [changelog](/changelog) for current state.
 </Note>

@@ -6,10 +6,10 @@ icon: "scale"
 
 ## The motivation
 
-Multiple coding agents, each in a separate git worktree, each running its own pre-commit hook.
-lefthook's worktree bugs, buffered output, and lack of tool coordination make this workload
-unstable. betterhook is a ground-up rewrite with the parallel-worktree problem as its first-class
-design constraint.
+Several agents running pre-commit hooks at once, each from a different worktree of the same
+repo. lefthook's worktree install bugs, buffered subprocess output, and missing tool
+coordination make this workload unstable. betterhook is a rewrite with that workload as the
+first-class design constraint.
 
 ## Feature comparison
 
@@ -62,15 +62,15 @@ design constraint.
   </Accordion>
 </AccordionGroup>
 
-## When you should still use lefthook
+## When to keep using lefthook
 
-betterhook is not a drop-in replacement for every scenario. **Use lefthook if:**
+betterhook isn't a drop-in for every scenario. Stick with lefthook if:
 
-- You're a single developer working in a single worktree — lefthook's quirks never bite you and its community is larger.
-- You depend on `templates`, `remotes`, or lefthook's YAML-specific DSL features.
-- You can't switch to Rust tooling at this layer of your stack.
+- You're solo, in a single worktree — the bugs above don't bite you, and lefthook's community is larger.
+- You rely on `templates`, `remotes`, or other lefthook YAML-specific features that aren't yet in betterhook.
+- You can't introduce a Rust binary at this layer of your stack.
 
-For the parallel-agent workload betterhook was designed around, though, the gap is fundamental.
+For the parallel-worktree workload, the gap is structural rather than incremental.
 
 <Tip>
   See the full build history and rationale in the [changelog](/changelog).

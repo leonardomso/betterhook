@@ -12,7 +12,7 @@ icon: "rocket"
     # cargo install betterhook-cli
     ```
 
-    On macOS you can also grab a release tarball from GitHub and drop the binary into `/usr/local/bin`.
+    On macOS, a release tarball is also available on GitHub — drop the binary into `/usr/local/bin`.
   </Step>
 
   <Step title="Scaffold a starter config">
@@ -21,9 +21,9 @@ icon: "rocket"
     betterhook init
     ```
 
-    This writes a `betterhook.toml` at the repo root with two sample jobs
+    Writes `betterhook.toml` at the repo root with two sample jobs
     (`cargo fmt --all -- --check` and `cargo clippy --workspace -- -D warnings`).
-    Edit it to match your stack.
+    Edit it for your stack.
   </Step>
 
   <Step title="Install the hook wrapper">
@@ -31,14 +31,13 @@ icon: "rocket"
     betterhook install
     ```
 
-    This writes a tiny POSIX wrapper into `<git-common-dir>/hooks/pre-commit`.
-    The wrapper is **byte-identical across every worktree of this repo** — at
-    commit time it runs `git rev-parse --show-toplevel` and dispatches to
-    whichever worktree is actually committing.
+    Writes a POSIX wrapper to `<git-common-dir>/hooks/pre-commit`. The wrapper
+    is byte-identical for every worktree of this repo — at commit time it
+    runs `git rev-parse --show-toplevel` and dispatches to whichever worktree
+    is actually committing.
 
     <Note>
-      If you already use husky or pre-commit and they've claimed `core.hooksPath`,
-      pass `--takeover` to replace their setup.
+      If husky or pre-commit have claimed `core.hooksPath`, pass `--takeover` to replace them.
     </Note>
   </Step>
 
@@ -51,7 +50,7 @@ icon: "rocket"
 
     ```json
     {
-      "betterhook_version": "0.0.2",
+      "betterhook_version": "0.1.0",
       "worktree": { "path": "...", "git_dir": "...", "common_dir": "..." },
       "installed": {
         "hooks": [{ "name": "pre-commit", "present": true, "matches": true }]
@@ -68,8 +67,8 @@ icon: "rocket"
     git commit -m "first hook"
     ```
 
-    betterhook runs every job in `betterhook.toml`, streams output line by line,
-    and blocks the commit if anything fails.
+    Each job in `betterhook.toml` runs, output streams line by line, and the
+    commit is blocked if anything fails.
   </Step>
 </Steps>
 
