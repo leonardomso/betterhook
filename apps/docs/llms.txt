@@ -1,0 +1,76 @@
+# betterhook
+
+> A fast, memory-tight, worktree-native git hooks manager built for the era of parallel AI coding agents. A single static Rust binary with line-streaming subprocess I/O, a per-worktree dispatch wrapper in the shared `.git/hooks/` directory, an opt-in coordinator daemon that serializes tool conflicts across worktrees, and NDJSON output for agent harnesses.
+
+This file lists every page in the betterhook documentation. Each entry links to the published Mintlify page; the Markdown source for each page is at the same URL with `.md` appended.
+
+## Get started
+
+- [Introduction](https://betterhook.dev/introduction): What betterhook is, why it exists, and the parallel-agent workload it targets.
+- [Quickstart](https://betterhook.dev/quickstart): From zero to a working worktree-aware pre-commit hook in 60 seconds.
+- [Why betterhook](https://betterhook.dev/why-betterhook): Side-by-side comparison with lefthook, husky, and pre-commit, including the specific lefthook bugs betterhook fixes.
+
+## Essentials
+
+- [Installation](https://betterhook.dev/essentials/installation): Install the binary and set up hook wrappers; coexisting with husky / pre-commit.
+- [Configuration](https://betterhook.dev/essentials/configuration): Every field of `betterhook.toml` with realistic examples and a full schema reference.
+- [Templates and globs](https://betterhook.dev/essentials/templates): `{staged_files}`, `{push_files}`, `{all_files}`, `{files}` and the include / exclude pipeline.
+- [Isolation](https://betterhook.dev/essentials/isolation): Tool mutexes, sharded semaphores, per-worktree `CARGO_TARGET_DIR` injection.
+- [Extends and local overrides](https://betterhook.dev/essentials/extends): Sharing a base config across repos and layering a per-machine override.
+- [Config formats](https://betterhook.dev/essentials/formats): TOML vs YAML vs KDL vs JSON — picking one, and how mixed-format `extends` works.
+- [Monorepo support](https://betterhook.dev/essentials/monorepo): `[packages.<name>]` blocks with path filters and per-package hook inheritance.
+
+## Commands
+
+- [Commands overview](https://betterhook.dev/commands/overview): Every betterhook subcommand at a glance.
+- [betterhook init](https://betterhook.dev/commands/init): Scaffold a starter `betterhook.toml`.
+- [betterhook install](https://betterhook.dev/commands/install): Write worktree-aware hook wrappers into the shared `.git/hooks/`.
+- [betterhook uninstall](https://betterhook.dev/commands/uninstall): SHA-verified wrapper removal that never touches user-modified hooks.
+- [betterhook run](https://betterhook.dev/commands/run): Run a hook directly. Supports `--dry-run`, `--json`, `--skip`, `--only`.
+- [betterhook status](https://betterhook.dev/commands/status): JSON snapshot of installed hooks, config, and worktree identity.
+- [betterhook explain](https://betterhook.dev/commands/explain): Print a job's resolved plan (command, files, env, lock) without executing.
+- [betterhook fix](https://betterhook.dev/commands/fix): Run every job's `fix = ...` variant — the agent self-correction surface.
+- [betterhook cache](https://betterhook.dev/commands/cache): Inspect, clear, or verify the content-addressable hook cache.
+- [betterhook builtins](https://betterhook.dev/commands/builtins): List and inspect the 12 bundled linter / formatter wrappers.
+- [betterhook doctor](https://betterhook.dev/commands/doctor): Pre-flight health check for install, config, tools, cache, and watcher.
+- [betterhook import](https://betterhook.dev/commands/import): Convert lefthook, husky, hk, or pre-commit configs into `betterhook.toml`.
+- [betterhook migrate (deprecated)](https://betterhook.dev/commands/migrate): Hidden alias for `betterhook import --from-format lefthook`.
+
+## Agent integration
+
+- [Agent integration overview](https://betterhook.dev/agents/overview): Why betterhook was built agent-first and what that buys you.
+- [NDJSON output](https://betterhook.dev/agents/ndjson): The stable event schema for `betterhook run --json`.
+- [Self-correction loop](https://betterhook.dev/agents/self-correction): The canonical run → fix → run pattern.
+- [Conductor integration](https://betterhook.dev/agents/conductor): Running betterhook across multiple agent worktrees in Conductor.
+
+## Architecture
+
+- [Architecture overview](https://betterhook.dev/architecture/overview): How betterhook is organized and how a commit flows through it end to end.
+- [Worktree model](https://betterhook.dev/architecture/worktree-model): The git primitives betterhook relies on (`--git-dir`, `--git-common-dir`, `--show-toplevel`).
+- [Runner](https://betterhook.dev/architecture/runner): The Tokio executor, output multiplexer, cancellation model, and git-index lock.
+- [Coordinator daemon](https://betterhook.dev/architecture/daemon): The opt-in daemon — Unix socket, lock registry, idle-exit lifecycle, flock fallback.
+- [Capability DAG](https://betterhook.dev/architecture/capability-dag): The read / write / network / `concurrent_safe` declarations that drive the dependency graph.
+- [Content-addressable cache](https://betterhook.dev/architecture/cache): blake3-keyed cache that turns a clean re-commit into a sub-100 ms replay.
+- [Speculative execution](https://betterhook.dev/architecture/speculative): Prewarming `concurrent_safe` jobs into the cache as files are saved.
+
+## Migration guides
+
+- [From lefthook](https://betterhook.dev/migration/from-lefthook): Convert a `lefthook.yml` to `betterhook.toml` in one command.
+- [From husky](https://betterhook.dev/migration/from-husky): Drop `.husky/*` shell scripts and move them into `betterhook.toml`.
+- [From pre-commit](https://betterhook.dev/migration/from-pre-commit): Move from `.pre-commit-config.yaml` to `betterhook.toml`.
+
+## Reference
+
+- [Exit codes](https://betterhook.dev/reference/exit-codes): The stable exit-code contract every betterhook subcommand honors.
+- [Environment variables](https://betterhook.dev/reference/env-vars): `BETTERHOOK_SKIP`, `BETTERHOOK_ONLY`, `BETTERHOOK_NO_LOCKS`, `BETTERHOOK_DAEMON_SOCK`, and what's deliberately not used.
+- [Wire protocol](https://betterhook.dev/reference/protocol): The bincode IPC format for direct integration with the coordinator daemon.
+- [Performance targets](https://betterhook.dev/reference/performance): Cold start, idle RSS, runner RSS, scaling targets, and how to measure locally.
+
+## Changelog
+
+- [Changelog](https://betterhook.dev/changelog): Release history, following Keep a Changelog and semver.
+
+## Optional
+
+- [GitHub repository](https://github.com/leonardomso/betterhook): Source code, issues, contributing guide.
+- [Issues](https://github.com/leonardomso/betterhook/issues): File a bug or request a feature.
