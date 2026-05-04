@@ -9,6 +9,6 @@
     "update": "mint update"
   },
   "devDependencies": {
-    "mint": "^4.2.507"
+    "mint": "^4.2.546"
   }
 }
