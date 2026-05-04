@@ -17,10 +17,8 @@ with the shell-escaped file list at execution time.
 | `{files}`         | The glob-filtered subset of whichever file set is active           |
 
 <Note>
-  Every file set is parsed from **NUL-delimited** git output via
-  `OsStr::from_bytes`, so paths with spaces, unicode, or leading dashes
-  round-trip correctly. This is the direct fix for a whole category of
-  lefthook quoting bugs.
+  File sets are parsed from NUL-delimited git output via `OsStr::from_bytes`,
+  so paths with spaces, unicode, or leading dashes round-trip correctly.
 </Note>
 
 ## The filter pipeline
