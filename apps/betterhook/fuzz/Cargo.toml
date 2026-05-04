@@ -8,7 +8,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.4.11"
+libfuzzer-sys = "0.4.12"
 betterhook = { path = ".." }
 
 # Fuzz targets must each declare a `[[bin]]` entry.
