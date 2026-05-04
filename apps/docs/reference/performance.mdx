@@ -24,30 +24,27 @@ on every CI run. Regressions greater than 10% fail the build.
 
 <AccordionGroup>
   <Accordion title="Cold start < 50 ms" icon="rocket">
-    The wrapper fires every time you run `git commit`. A slow cold start
-    turns into compounding friction — 50 ms × 20 commits/day per agent × 4
-    agents is already measurable. Our hard floor: **the wrapper overhead
-    must be imperceptible to humans and invisible to CI.**
+    The wrapper fires every time you run `git commit`. 50 ms × 20 commits/day
+    × 4 agents adds up. The bar: wrapper overhead has to be imperceptible to
+    humans and invisible to CI.
   </Accordion>
 
   <Accordion title="Daemon idle RSS < 8 MB" icon="server">
-    Conductor users might have 10 repos with betterhookd running in each.
-    8 MB × 10 = 80 MB total — small enough to not show up in a monitoring
-    dashboard. Anything larger and the daemon becomes noisy.
+    A Conductor user can have 10 repos with a daemon running in each;
+    8 MB × 10 = 80 MB total. Larger and the daemon shows up in monitoring.
   </Accordion>
 
   <Accordion title="Runner RSS < 30 MB for 8 parallel jobs" icon="layers">
-    This is the headline lefthook fix: Go's `os/exec` buffers entire
-    subprocess output in memory, so a chatty parallel lint run can trivially
-    consume hundreds of MB. betterhook streams line-by-line through the
-    multiplexer, so memory is O(1) in subprocess output volume.
+    The headline lefthook fix. Go's `os/exec` buffers entire subprocess
+    output in memory, so a chatty parallel lint run can hit hundreds of MB.
+    betterhook streams line by line through the multiplexer, so memory stays
+    O(1) in subprocess output volume.
   </Accordion>
 
   <Accordion title="Linear scaling across worktrees" icon="trending-up">
-    N worktrees committing concurrently should take O(N) total time, not
-    O(N²). This is what forces us to serialize only the *actual* shared
-    resources (`.git/index`, tool caches) and let everything else run in
-    parallel.
+    N worktrees committing concurrently should take O(N) wall time, not
+    O(N²). That forces us to serialize only the actually shared resources
+    (`.git/index`, tool caches) and let everything else run free.
   </Accordion>
 </AccordionGroup>
 

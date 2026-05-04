@@ -83,5 +83,5 @@ betterhook deliberately **does not** read:
 - `GIT_DIR` — we always use `git rev-parse --absolute-git-dir` and pass
   it explicitly to every git subprocess. Inheriting `$GIT_DIR` is the
   root cause of lefthook's worktree bugs.
-- `LEFTHOOK_*` env vars — no compat mode. Use `betterhook migrate` to
-  convert your config.
+- `LEFTHOOK_*` env vars — no compat mode. Use `betterhook import --from lefthook.yml`
+  to convert your config.
