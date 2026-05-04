@@ -7,7 +7,7 @@
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
-use fs4::fs_std::FileExt;
+use fs4::FileExt;
 
 /// A held fs2/fs4 exclusive advisory lock. Drops release the lock.
 #[derive(Debug)]
@@ -30,7 +30,7 @@ impl FileLock {
             .create(true)
             .truncate(false)
             .open(&path)?;
-        file.lock_exclusive()?;
+        FileExt::lock(&file)?;
         Ok(Self { file, path })
     }
 }
