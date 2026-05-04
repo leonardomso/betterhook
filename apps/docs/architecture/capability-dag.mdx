@@ -38,9 +38,9 @@ The resolver in `runner::dag` adds an edge `A → B` when:
 - both `A.network` and `B.network` are true and at least one isn't
   `concurrent_safe`
 
-The graph is acyclic by construction — when two jobs form a cycle,
-the resolver picks the parent based on the user's `priority = [...]`
-ordering at the hook level.
+The graph is acyclic by construction. When two jobs would form a
+cycle, the resolver picks the parent based on the user's
+`priority = [...]` ordering at the hook level.
 
 ## What it gets you
 

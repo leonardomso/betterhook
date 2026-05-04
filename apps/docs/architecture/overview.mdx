@@ -62,7 +62,7 @@ betterhook/
     ```sh
     worktree_root="$(git rev-parse --show-toplevel)"
     ```
-    This returns the current worktree root — even though the wrapper itself
+    This returns the current worktree root, even though the wrapper itself
     lives in the shared common dir. This is the git feature lefthook fails
     to use correctly.
   </Step>
@@ -88,8 +88,8 @@ betterhook/
     `OutputMultiplexer` actor.
   </Step>
   <Step title="Isolation, stash, timeouts, stage_fixed">
-    Every cross-cutting feature — coordinator locks, untracked-stash safety,
-    per-job timeouts, `stage_fixed` re-adding — is applied inline as the
+    Every cross-cutting feature (coordinator locks, untracked-stash safety,
+    per-job timeouts, `stage_fixed` re-adding) is applied inline as the
     runner walks the job list.
   </Step>
   <Step title="Summary and exit">
@@ -104,7 +104,7 @@ betterhook/
 1. Worktree-native. Every git operation is scoped to an explicit worktree path; nothing relies on the ambient `$GIT_DIR`.
 2. Streaming, not buffered. Tokio + `AsyncBufReadExt::lines()` keeps memory O(1) regardless of subprocess output volume.
 3. Agent-first. NDJSON output, stable exit codes, machine-readable `status` and `explain`.
-4. Opt-in complexity. The coordinator daemon, fuzzing, benches, and compat suite are separable — `init + install + run` is enough for a working hook.
+4. Opt-in complexity. The coordinator daemon, fuzzing, benches, and compat suite are separable. `init + install + run` is enough for a working hook.
 5. Subprocess git, not libgit2/gix. We shell out to the user's `git` binary; both libgit2 and early gix conflated `$GIT_DIR` with `$GIT_COMMON_DIR`, which is the source of lefthook's worktree install bugs.
 
 ## What to read next

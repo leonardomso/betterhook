@@ -4,11 +4,10 @@ description: "How betterhook turns a clean re-commit into a sub-100 ms cache rep
 icon: "database"
 ---
 
-The CA cache is what turns a clean re-commit into a sub-100 ms cache replay.
-Every `concurrent_safe` job is keyed on `blake3(file_content) +
-blake3(tool_binary) + blake3(args)`. The result — exit code, captured
-`OutputEvent` stream, and a per-input mtime snapshot — is written under
-`<git-common-dir>/betterhook/cache/`.
+The CA cache turns a clean re-commit into a sub-100 ms replay. Every
+`concurrent_safe` job is keyed on `blake3(file_content) + blake3(tool_binary) + blake3(args)`.
+The result (exit code, captured `OutputEvent` stream, and a per-input
+mtime snapshot) is written under `<git-common-dir>/betterhook/cache/`.
 
 ## Lookup path
 

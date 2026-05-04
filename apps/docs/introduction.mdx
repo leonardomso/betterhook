@@ -37,7 +37,9 @@ git commit -am "go"       # your hooks run, correctly, per-worktree
 
 ## The problem
 
-Several agents commit on overlapping branches, each in its own worktree, each running formatters and linters in pre-commit. They share a common git dir, a single `cargo target/`, an ESLint cache, a prettier lockfile. Under that load, hook managers built for one developer in one checkout fall over: installs fail in linked worktrees, subprocess output buffers in memory, parallel scheduling ignores priority, untracked files trip formatters.
+Several agents commit on overlapping branches, each in its own worktree, each running formatters and linters in pre-commit. They share a common git dir, a single `cargo target/`, an ESLint cache, a prettier lockfile.
+
+Under that load, hook managers built for one developer in one checkout fall over: installs fail in linked worktrees, subprocess output buffers in memory, parallel scheduling ignores priority, untracked files trip formatters.
 
 [Why betterhook](/why-betterhook) walks through the specific lefthook issues this is built to fix.
 

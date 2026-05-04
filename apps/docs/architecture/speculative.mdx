@@ -22,8 +22,8 @@ watch_exclude = ["**/target/**", "**/node_modules/**", "**/.git/**"]
 ## Graceful degradation
 
 `notify` is flaky on NFS, sandboxed containers, and fresh Linux
-boxes that haven't bumped their inotify watch limit. Betterhook never
-crashes the daemon when a watcher fails to start — it sets a
+boxes that haven't bumped their inotify watch limit. betterhook never
+crashes the daemon when a watcher fails to start. It sets a
 `disabled_reason` on the speculative stats sidecar and falls back to
 non-speculative mode for that worktree. `betterhook status` and
 `betterhook doctor` both surface the reason.

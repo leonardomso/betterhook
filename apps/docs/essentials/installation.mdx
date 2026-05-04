@@ -13,25 +13,24 @@ icon: "download"
 ## Install the binary
 
 <Tabs>
-  <Tab title="From source (recommended today)">
+  <Tab title="crates.io">
+    ```sh
+    cargo install betterhook-cli
+    ```
+
+    The binary lands in `$CARGO_HOME/bin/betterhook`. Make sure that's on your `PATH`.
+  </Tab>
+  <Tab title="From source">
     ```sh
     git clone https://github.com/leonardomso/betterhook
     cd betterhook
     cargo install --path apps/cli
     ```
-
-    The binary lands in `$CARGO_HOME/bin/betterhook`. Make sure that's on your `PATH`.
   </Tab>
   <Tab title="Homebrew (planned)">
     ```sh
     # not yet published
     brew install betterhook
-    ```
-  </Tab>
-  <Tab title="crates.io (planned)">
-    ```sh
-    # not yet published
-    cargo install betterhook-cli
     ```
   </Tab>
 </Tabs>

@@ -5,8 +5,9 @@ icon: "sliders"
 ---
 
 betterhook's config lives at `betterhook.toml` at your repo root. You can also use
-`betterhook.yml`, `betterhook.yaml`, or `betterhook.json` — all three parse into
-the same internal AST. See [formats](/essentials/formats) for the details.
+`betterhook.yml`, `betterhook.yaml`, `betterhook.kdl`, or `betterhook.json`. All
+formats parse into the same internal AST. See [formats](/essentials/formats) for
+the details.
 
 ## Full example
 
@@ -145,6 +146,6 @@ gitignored and merged on top with the highest precedence. Typical uses:
     Share a base config across repos; layer a per-machine override.
   </Card>
   <Card title="Formats" icon="code" href="/essentials/formats">
-    TOML vs YAML vs JSON — pick any, they all work.
+    TOML, YAML, KDL, JSON. Pick any; they all work.
   </Card>
 </CardGroup>

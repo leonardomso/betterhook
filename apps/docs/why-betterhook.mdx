@@ -38,7 +38,7 @@ start, not retrofitted to it.
   <Accordion title="Issue #962 — remote config clone corrupts the index" icon="bug">
     [#962](https://github.com/evilmartians/lefthook/issues/962). Cloning a remote lefthook config from inside a worktree corrupts `.git/index`.
 
-    **betterhook**: Remote configs (when shipped in v0.3) clone into `$XDG_CACHE_HOME/betterhook/remotes/` with mandatory SHA pinning — never into the repo's own index.
+    **betterhook**: Remote configs (when shipped in v0.3) clone into `$XDG_CACHE_HOME/betterhook/remotes/` with mandatory SHA pinning, never into the repo's own index.
   </Accordion>
   <Accordion title="Issue #1265 — GIT_DIR env pollution" icon="bug">
     [#1265](https://github.com/evilmartians/lefthook/issues/1265). lefthook inherits `$GIT_DIR` from git's hook invocation and leaks it into tool subprocesses.
@@ -66,10 +66,10 @@ start, not retrofitted to it.
 
 betterhook isn't a drop-in for every scenario. Stick with lefthook if:
 
-- You're solo, in a single worktree — the bugs above don't bite you, and lefthook's community is larger.
+- You're solo, in a single worktree. The bugs above don't bite you, and lefthook's community is larger.
 - You rely on `templates`, `remotes`, or other lefthook YAML-specific features that aren't yet in betterhook.
 - You can't introduce a Rust binary at this layer of your stack.
 
 <Tip>
-  See the full build history and rationale in the [changelog](/changelog).
+  See the [changelog](/changelog) for what shipped in the current release.
 </Tip>

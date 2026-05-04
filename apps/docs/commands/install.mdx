@@ -29,8 +29,8 @@ for every hook type declared in your config. At commit time, the wrapper runs
 
 ## What gets written
 
-- `<git-common-dir>/hooks/<hookname>` — the wrapper script, executable
-- `<git-common-dir>/betterhook/installed.json` — the SHA manifest for safe uninstall
+- `<git-common-dir>/hooks/<hookname>`: the wrapper script, executable.
+- `<git-common-dir>/betterhook/installed.json`: the SHA manifest for safe uninstall.
 
 ## The wrapper script
 
@@ -48,10 +48,10 @@ exec "/path/to/betterhook" __dispatch \
 
 Three properties make this worktree-native:
 
-1. **No embedded config path.** The dispatch is purely runtime.
-2. **`git rev-parse --show-toplevel`** reliably returns the *current* worktree
+1. No embedded config path. The dispatch is purely runtime.
+2. `git rev-parse --show-toplevel` reliably returns the *current* worktree
    even though `$0` lives in the shared dir.
-3. **`$@` passthrough** so `commit-msg`, `pre-push`, etc. receive their
+3. `$@` passthrough, so `commit-msg`, `pre-push`, etc. receive their
    original arguments.
 
 ## Coexistence with other hook managers
@@ -62,8 +62,8 @@ for your options.
 
 ## Idempotency
 
-Running `install` twice is a no-op — the wrapper is content-addressed and
-byte-identical. Two worktrees installing at the same time don't race.
+Running `install` twice is a no-op. The wrapper is content-addressed and
+byte-identical, so two worktrees installing at the same time don't race.
 
 ## Example
 

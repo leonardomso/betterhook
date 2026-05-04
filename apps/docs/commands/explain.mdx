@@ -79,9 +79,9 @@ $ betterhook explain --hook pre-commit --job lint
 
 ## Difference from `run --dry-run`
 
-- **`run --dry-run`** resolves the job graph and prints a flat list of job
+- `run --dry-run` resolves the job graph and prints a flat list of job
   names that would execute in order.
-- **`explain`** prints the full resolved plan for each job — the command, the
+- `explain` prints the full resolved plan for each job: the command, the
   files it would see, the env vars, the lock it would acquire.
 
 Both produce JSON; `explain` is the deeper one.

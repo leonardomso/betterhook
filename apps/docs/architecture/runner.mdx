@@ -101,7 +101,7 @@ Two sinks currently exist:
 <Tabs>
   <Tab title="TTY mode">
     Colored per-job prefixes via `owo-colors`. Deterministic colors from a
-    FNV-1a hash of the job name — the same job always gets the same
+    FNV-1a hash of the job name, so the same job always gets the same
     palette slot across runs.
   </Tab>
   <Tab title="NDJSON mode">
@@ -110,7 +110,7 @@ Two sinks currently exist:
   </Tab>
 </Tabs>
 
-Both sinks share the same backing mpsc — the sink is selected once at
+Both sinks share the same backing mpsc. The sink is selected once at
 runner start and stays fixed for the hook run.
 
 ## 5. Git index lock

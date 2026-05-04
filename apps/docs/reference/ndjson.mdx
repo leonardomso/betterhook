@@ -29,7 +29,7 @@ fields may be added, never renamed or removed.
 
   <Accordion title="line" icon="file-text">
     One line of subprocess output. Emitted as soon as the subprocess writes
-    it — no buffering.
+    it. No buffering.
 
     ```json
     {
@@ -71,9 +71,9 @@ fields may be added, never renamed or removed.
     ```
 
     Possible reasons:
-    - `"no files matched glob"` — the template was expanded but the filtered file list was empty
-    - `"filtered by --skip/--only"` — the runtime filter dropped this job
-    - `"BETTERHOOK_NO_LOCKS set — running unlocked"` — informational, emitted when --no-locks degrades an isolated job
+    - `"no files matched glob"`: the template was expanded but the filtered file list was empty
+    - `"filtered by --skip/--only"`: the runtime filter dropped this job
+    - `"BETTERHOOK_NO_LOCKS set — running unlocked"`: informational, emitted when `--no-locks` degrades an isolated job
   </Accordion>
 
   <Accordion title="summary" icon="receipt">
@@ -94,18 +94,18 @@ fields may be added, never renamed or removed.
 ## Parsing recipes
 
 <CodeGroup>
-```sh jq — pass/fail
+```sh pass/fail
 betterhook run pre-commit --json \
   | jq -r 'select(.kind == "summary") | .ok'
 # true or false
 ```
 
-```sh jq — failed jobs with exit codes
+```sh failed jobs with exit codes
 betterhook run pre-commit --json \
   | jq -r 'select(.kind == "job_finished" and .exit != 0) | "\(.job): exit \(.exit)"'
 ```
 
-```sh jq — collect stderr from a specific job
+```sh collect stderr from a specific job
 betterhook run pre-commit --json \
   | jq -r 'select(.kind == "line" and .job == "lint" and .stream == "stderr") | .line'
 ```
@@ -132,7 +132,7 @@ for line in proc.stdout:
 
 <Check>Every `kind` value and its required fields are stable across v0.x.</Check>
 <Check>New optional fields may be added without a version bump.</Check>
-<Check>New `kind` variants may be added without a version bump — your parser should ignore unknown kinds.</Check>
+<Check>New `kind` variants may be added without a version bump. Your parser should ignore unknown kinds.</Check>
 <Warning>Field types are stable. `duration` is always a string, never a number, and so on.</Warning>
 
 ## See also
